@@ -12,8 +12,7 @@ savedModelDir: './trained_models/'
 testModelPath: './trained_models/'
 
 # Dataset Parameters
-TrainingDataset: './data/Training'
-TestingDataset: './data/Testing'
+DatasetDir: './data/'
 num_workers: 1
 
 # Training Parameters
