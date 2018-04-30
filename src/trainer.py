@@ -17,8 +17,8 @@ class Trainer(object):
         self.params = parameters
 
         # Initialize datasets
-        self.trainset = IAMDataset(self.params, setType='train')
-        self.validationset = IAMDataset(self.params, setType='validate')
+        self.trainset = IAMDataset(self.params, setType='training')
+        self.validationset = IAMDataset(self.params, setType='validation')
 
         # Initialize loaders
         self.trainloader = DataLoader(self.trainset, batch_size=self.params.batch_size,

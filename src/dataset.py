@@ -10,17 +10,25 @@ import os
 class IAMDataset(Dataset):
     """ IAM On-Line Handwriting Dataset Class """
 
-    def __init__(self, parameters, setType='Train'):
+    def __init__(self, parameters, setType='Training'):
         """
         Args:
             parameters (namedTuple): an object containing the session parameters
-            setType (string): denotes the type of the dataset
+            setType (string): denotes the type of the dataset. It's possible values are:
+                                'Training', 'Validation', 'Testing'
         """
         self.params = parameters
+        assert(setType.lower() == 'training' or setType.lower() == 'validation' or setType.lower() == 'testing')
         self.setType = setType.lower()
         self.data_filename = os.path.join(self.params.DatasetDir, self.setType + '_data.pickled')
-        self.alphabet = []  # Initially empty
+        # '_' represents unknown characters, characters not in the alphabet
+        self.alphabet = ['_', ' ', '-', '.', ',', "'", '"', '!', '?', '(', ')'] + \
+                        [c for c in string.digits + string.ascii_uppercase + string.ascii_lowercase]
         self.length = 0
+
+        self.ascii = None
+        self.strokes = None
+        self.ascii_onehot = None
 
         if not (os.path.exists(self.data_filename)):
             print("Creating file {}".format(self.data_filename))
@@ -29,8 +37,6 @@ class IAMDataset(Dataset):
             print("File {} exists already".format(self.data_filename))
 
         self.load_data()
-
-        raise KeyboardInterrupt
 
     def get_alphabet(self):
         with open(os.path.join(self.params.DatasetDir, 'task1', 'letters')) as alphabet:
@@ -45,10 +51,7 @@ class IAMDataset(Dataset):
         def getAscii(filename):
             with open(filename, "r") as f:
                 text = f.read()
-            text = text[text.find('CSR:')+6:]
-            for c in text:
-                if c not in self.alphabet and c != '\n':
-                    self.alphabet.append(c)
+            text = text[text.find('CSR:') + 6:]
             return text.split('\n')
 
         def getStrokes(filename_list):
@@ -103,14 +106,14 @@ class IAMDataset(Dataset):
                 else:
                     print("\nText was too short: {}".format(text))
 
-        assert(len(text_array) == len(strokes_array))
+        assert (len(text_array) == len(strokes_array))
         with open(self.data_filename, 'wb+') as f:
             pickle.dump([text_array, strokes_array], f)
 
     def create_data_path_list(self):
         type_filename = 'trainset.txt' if self.setType == 'train' else \
-                        'testset_v.txt' if self.setType == 'validate' else \
-                        'testset_f.txt'
+            'testset_v.txt' if self.setType == 'validate' else \
+                'testset_f.txt'
         data_path_list = []
         for filename in os.listdir(os.path.join(self.params.DatasetDir, 'task1')):
             if filename == type_filename:
@@ -140,11 +143,19 @@ class IAMDataset(Dataset):
     def load_data(self):
         with open(self.data_filename, 'rb') as f:
             self.ascii, self.strokes = pickle.load(f)
-        print(self.strokes)
+        self.length = len(self.ascii)
+        self.ascii_onehot = []
+        for sentence in self.ascii:
+            onehot = np.zeros(shape=(len(sentence), len(self.alphabet)), dtype=np.uint8)
+            for i, c in enumerate(sentence):
+                if c in self.alphabet:
+                    onehot[i, self.alphabet.index(c)] = 1
+                else:
+                    onehot[i, 0] = 1
+            self.ascii_onehot.append(onehot)
 
     def __len__(self):
         return self.length
 
     def __getitem__(self, idx):
-        ascii_path, strokes_paths = self.data_path_list[idx]
-        pass
+        return self.ascii_onehot[idx], self.strokes[idx]

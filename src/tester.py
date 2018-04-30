@@ -10,7 +10,7 @@ class Tester(object):
         self.params = parameters
 
         # Initialize datasets
-        self.testset = IAMDataset(self.params, setType='test')
+        self.testset = IAMDataset(self.params, setType='testing')
 
         # Initialize loaders
 
