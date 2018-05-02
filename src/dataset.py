@@ -1,4 +1,5 @@
 from __future__ import print_function
+import torch
 from torch.utils.data import Dataset
 import xml.etree.ElementTree as ET
 import numpy as np
@@ -62,7 +63,7 @@ class IAMDataset(Dataset):
                 y_offset = min([float(root[0][i].attrib['y']) for i in range(1, 4)])
                 strokes = []
                 for stroke in root[1].findall('Stroke'):
-                    points = [(0.0, 0.0)]
+                    points = []
                     for point in stroke.findall('Point'):
                         points.append((float(point.attrib['x']) - x_offset,
                                        float(point.attrib['y']) - y_offset))
@@ -146,16 +147,20 @@ class IAMDataset(Dataset):
         self.length = len(self.ascii)
         self.ascii_onehot = []
         for sentence in self.ascii:
-            onehot = np.zeros(shape=(len(sentence), len(self.alphabet)), dtype=np.uint8)
+            onehot = np.zeros(shape=(len(sentence), len(self.alphabet)), dtype=np.uint8).tolist()
             for i, c in enumerate(sentence):
                 if c in self.alphabet:
-                    onehot[i, self.alphabet.index(c)] = 1
+                    onehot[i][self.alphabet.index(c)] = 1
                 else:
-                    onehot[i, 0] = 1
+                    onehot[i][0] = 1
             self.ascii_onehot.append(onehot)
 
     def __len__(self):
         return self.length
 
     def __getitem__(self, idx):
-        return self.ascii_onehot[idx], self.strokes[idx]
+        """
+        :param idx (integer): index of the element to get
+        :return: onehot encoded ascii string Tensor, strokes Tensor
+        """
+        return torch.LongTensor(self.ascii_onehot[idx]), torch.Tensor(self.strokes[idx])
