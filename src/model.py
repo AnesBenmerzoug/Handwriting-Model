@@ -1,3 +1,4 @@
+import torch
 from torch.nn.modules import Module, LSTM, Linear
 from src.modules import GaussianWindow, MDN
 
@@ -20,5 +21,18 @@ class HandwritingGenerator(Module):
         # Mixture Density Network Layer
         self.output_layer = MDN()
 
-    def forward(self, input, onehot):
+    def forward(self, onehot):
         pass
+
+    def reset_parameters(self):
+        for parameter in self.parameters():
+            if parameter.size() == 2:
+                torch.nn.init.xavier_uniform(parameter, gain=1.0)
+            else:
+                torch.nn.init.uniform(parameter, -1.0, 1.0)
+
+    def num_parameters(self):
+        num = 0
+        for weight in self.parameters():
+            num = num + weight.numel()
+        return num
