@@ -9,21 +9,23 @@ class GaussianWindow(Module):
         self.num_components = num_components
         self.window_size = window_size
 
-    def forward(self, input, onehot):
-        abk_hats = self.parameter_layer(input)
+    def forward(self, input_, onehot, prev_kappa=None):
+        abk_hats = self.parameter_layer(input_)
         abk = torch.exp(abk_hats)
-        alpha, beta, kappa = torch.chunk(abk, dim=1)
-        for i in range(kappa.size(0) - 1):
-            kappa[i+1] = kappa[i+1] + kappa[i]
-        u = torch.arange(0, self.window_size - 1)
-        phi = torch.sum(alpha * torch.exp(-beta * torch.pow(kappa - u, 2)))
-        window = phi * onehot
-        return window
+        alpha, beta, kappa = torch.chunk(abk, 3, dim=2)
+        if prev_kappa is None:
+            prev_kappa = kappa
+        else:
+            kappa, prev_kappa = kappa + prev_kappa, kappa
+        u = torch.autograd.Variable(torch.arange(0, onehot.size(1)).view(-1, 1).expand(-1, kappa.size(2)))
+        phi = torch.sum(alpha * torch.exp(-beta * torch.pow(kappa - u, 2)), dim=2).view(1, -1, 1)
+        window = phi * onehot.float()
+        return window, prev_kappa
 
 
 class MDN(Module):
     def __init__(self):
         super(MDN, self).__init__()
 
-    def forward(self, input):
+    def forward(self, input_):
         pass
