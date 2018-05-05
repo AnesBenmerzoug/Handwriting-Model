@@ -9,6 +9,7 @@ from src.dataset import IAMDataset
 from src.optimizer import SVRG
 from src.scheduler import CosineAnnealingWarmRestartLR
 from src.model import HandwritingGenerator
+from collections import namedtuple
 from copy import deepcopy
 import time
 import os
@@ -36,21 +37,16 @@ class Trainer(object):
         # Checking for GPU
         self.useGPU = self.params.useGPU and torch.cuda.is_available()
 
-        # Setup optimizer
-        self.optimizer = self.optimizer_select()
-
-        # Scheduler
-        self.scheduler = CosineAnnealingWarmRestartLR(self.optimizer,
-                                                      T_max=self.params.T_max,
-                                                      eta_min=self.params.eta_min,
-                                                      T_mult=self.params.T_mult)
-
         # Initialize model
-        print("Training New Model")
-        self.model = HandwritingGenerator(alphabet_size=len(self.alphabet),
-                                          num_window_components=self.params.num_window_components,
-                                          hidden_size=self.params.hidden_size)
-
+        if self.params.resumeTraining is False:
+            print("Training New Model")
+            self.model = HandwritingGenerator(alphabet_size=len(self.alphabet),
+                                              hidden_size=self.params.hidden_size,
+                                              num_window_components=self.params.num_window_components,
+                                              num_mixture_components=self.params.num_mixture_components)
+        else:
+            print("Resuming Training")
+            self.load_model(self.useGPU)
         print(self.model)
 
         print("Number of parameters = {}".format(self.model.num_parameters()))
@@ -78,6 +74,16 @@ class Trainer(object):
                     self.snapshot_model.cpu()
         else:
             print("Using CPU")
+
+
+        # Setup optimizer
+        self.optimizer = self.optimizer_select()
+
+        # Scheduler
+        self.scheduler = CosineAnnealingWarmRestartLR(self.optimizer,
+                                                      T_max=self.params.T_max,
+                                                      eta_min=self.params.eta_min,
+                                                      T_mult=self.params.T_mult)
 
     def train_model(self):
         min_Loss = None
@@ -127,8 +133,11 @@ class Trainer(object):
                 onehot, strokes = onehot.cuda(), strokes.cuda()
             onehot, strokes = Variable(onehot), Variable(strokes)
             # Main Model Forward Step
-            output = self.model(onehot)
-            raise KeyboardInterrupt
+            all_output = []
+            print(strokes.size())
+            for idx in range(strokes.size(1)):
+                output = self.model(strokes[:, idx:idx+1, :], onehot)
+                all_output.append(output)
             # Loss Computation
             loss = self.criterion(output, strokes)
             print("loss = {:.3f}".format(loss.data[0]))
@@ -183,6 +192,23 @@ class Trainer(object):
 
     def save_model(self, model_parameters, model_accuracy):
         self.model.load_state_dict(model_parameters)
-        torch.save(self.model.serialize(self.model, self.params._asdict()),
+        torch.save(self.serialize(),
                    os.path.join(self.params.savedModelDir, 'Trained_Model_{}'.format(int(model_accuracy))
                                 + '_' + time.strftime("%d.%m.20%y_%H.%M")))
+
+    def load_model(self, useGPU=False):
+        package = torch.load(self.params.trainedModelPath, map_location=lambda storage, loc: storage)
+        self.model = HandwritingGenerator.load_model(package, useGPU)
+        parameters = package['params']
+        self.params = namedtuple('Parameters', (parameters.keys()))(*parameters.values())
+        self.optimizer = self.optimizer_select()
+
+    def serialize(self):
+        model_is_cuda = next(self.model.parameters()).is_cuda
+        model = self.model.cpu() if model_is_cuda else self.model
+        package = {
+            'state_dict': model.state_dict(),
+            'params': self.params._asdict(),
+            'optim_dict': self.optimizer.state_dict()
+        }
+        return package

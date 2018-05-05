@@ -63,7 +63,7 @@ class IAMDataset(Dataset):
                 y_offset = min([float(root[0][i].attrib['y']) for i in range(1, 4)])
                 strokes = []
                 for stroke in root[1].findall('Stroke'):
-                    points = []
+                    points = [(0.0, 0.0)]
                     for point in stroke.findall('Point'):
                         points.append((float(point.attrib['x']) - x_offset,
                                        float(point.attrib['y']) - y_offset))
@@ -163,4 +163,4 @@ class IAMDataset(Dataset):
         :param idx (integer): index of the element to get
         :return: onehot encoded ascii string Tensor, strokes Tensor
         """
-        return torch.LongTensor(self.ascii_onehot[idx]), torch.Tensor(self.strokes[idx])
+        return torch.Tensor(self.ascii_onehot[idx]), torch.Tensor(self.strokes[idx])

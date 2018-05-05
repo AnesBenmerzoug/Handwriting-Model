@@ -2,12 +2,10 @@
 
 # Model Parameters
 input_size: 3
-hidden_size: 10
+hidden_size: 30
 num_window_components: 10
-num_mixture_components: 10
-output_size: 2
-window_size: [1, 1]
-batch_size: 2
+num_mixture_components: 20
+batch_size: 1
 savedModelDir: './trained_models/'
 testModelPath: './trained_models/'
 
