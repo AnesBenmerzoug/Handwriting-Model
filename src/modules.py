@@ -19,8 +19,8 @@ class GaussianWindow(Module):
         else:
             kappa, prev_kappa = kappa + prev_kappa, kappa
         u = torch.autograd.Variable(torch.arange(0, onehot.size(1)).view(-1, 1).expand(-1, kappa.size(2)))
-        phi = torch.sum(alpha * torch.exp(-beta * torch.pow(kappa - u, 2)), dim=2).view(1, -1, 1)
-        window = torch.matmul(phi.transpose(1, 2), onehot)
+        phi = torch.sum(alpha * torch.exp(-beta * torch.pow(kappa - u, 2)), dim=2).view(1, 1, -1)
+        window = torch.matmul(phi, onehot)
         return window, prev_kappa
 
     def __repr__(self):

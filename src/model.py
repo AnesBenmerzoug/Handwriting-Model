@@ -27,21 +27,19 @@ class HandwritingGenerator(Module):
         self.hidden2 = None
 
     def forward(self, strokes, onehot):
-        print(strokes.size())
-        print(onehot.size())
         output, self.hidden1 = self.lstm1_layer(strokes, self.hidden1)
-        print(output.size())
         window, self.prev_kappa = self.window_layer(output, onehot, self.prev_kappa)
-        print(window.size())
         output, self.hidden2 = self.lstm2_layer(torch.cat((strokes, output, window), dim=2), self.hidden2)
-        print(output.size())
         mdn_parameters = self.output_layer(output)  # eos, pi, mu1, mu2, sigma1, sigma2, rho
-        print(mdn_parameters)
-        raise KeyboardInterrupt
         return mdn_parameters
 
     def sample_bivariate_gaussian(self, pi, mu1, mu2, sigma1, sigma2, rho):
         pass
+
+    def reset_state(self):
+        self.prev_kappa = None
+        self.hidden1 = None
+        self.hidden2 = None
 
     def reset_parameters(self):
         for parameter in self.parameters():

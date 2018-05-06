@@ -7,8 +7,8 @@ from torch.utils.data.sampler import RandomSampler
 from torch.nn.utils import clip_grad_norm
 from src.dataset import IAMDataset
 from src.optimizer import SVRG
-from src.scheduler import CosineAnnealingWarmRestartLR
 from src.model import HandwritingGenerator
+from src.loss import HandwritingLoss
 from collections import namedtuple
 from copy import deepcopy
 import time
@@ -75,15 +75,38 @@ class Trainer(object):
         else:
             print("Using CPU")
 
-
         # Setup optimizer
         self.optimizer = self.optimizer_select()
 
-        # Scheduler
-        self.scheduler = CosineAnnealingWarmRestartLR(self.optimizer,
-                                                      T_max=self.params.T_max,
-                                                      eta_min=self.params.eta_min,
-                                                      T_mult=self.params.T_mult)
+        # Criterion
+        self.criterion = HandwritingLoss(self.params)
+
+    def snapshot_closure(self):
+        def closure(data, target):
+            # Split data tuple
+            onehot, strokes = data
+            # Wrap it in Variables
+            if self.useGPU is True:
+                onehot, strokes = onehot.cuda(), strokes.cuda()
+            onehot, strokes = Variable(onehot), Variable(strokes)
+            # Forward Step
+            self.model.reset_state()
+            snapshot_loss = None
+            for idx in range(strokes.size(1) - 1):
+                output = self.model(strokes[:, idx:idx + 1, :], onehot)
+                # Loss Computation
+                if snapshot_loss is None:
+                    snapshot_loss = self.criterion(output, strokes[:, idx:idx + 1, :]) / strokes.size(1)
+                else:
+                    snapshot_loss = snapshot_loss + self.criterion(output, strokes[:, idx:idx + 1, :]) / strokes.size(1)
+            # Zero the optimizer gradient
+            self.optimizer.zero_grad()
+            # Backward step
+            snapshot_loss.backward()
+            # Clip gradients
+            clip_grad_norm(self.snapshot_model.parameters(), self.params.max_norm)
+            return snapshot_loss
+        return closure
 
     def train_model(self):
         min_Loss = None
@@ -91,14 +114,12 @@ class Trainer(object):
         avg_losses = np.zeros(self.params.num_epochs)
         for epoch in range(self.params.num_epochs):
             print("Epoch {}".format(epoch + 1))
-            # Update learning rate
-            self.scheduler.step()
 
             if self.params.optimizer == 'SVRG':
                 # Update SVRG snapshot
                 self.optimizer.update_snapshot(dataloader=self.trainloader, closure=self.snapshot_closure())
 
-            print("Learning Rate= {}".format(self.optimizer.param_groups[0]['lr']))
+            print("Learning Rate = {}".format(self.optimizer.param_groups[0]['lr']))
 
             # Set mode to training
             self.model.train()
@@ -106,14 +127,14 @@ class Trainer(object):
             # Go through the training set
             avg_losses[epoch] = self.train_epoch()
 
-            print("Average loss= {:.3f}".format(avg_losses[epoch]))
+            print("Average loss = {:.3f}".format(avg_losses[epoch]))
 
             # Switch to eval and go through the test set
             self.model.eval()
 
             # Go through the test set
             test_loss = self.test_epoch()
-            print("In Epoch {}, Obtained Loss {:.3f}".format(epoch + 1, test_loss))
+            print("In Epoch {}, Obtained Average Loss= {:.3f}".format(epoch + 1, test_loss))
             if min_Loss is None or min_Loss >= test_loss:
                 min_Loss = test_loss
                 best_model = self.model.state_dict()
@@ -124,8 +145,9 @@ class Trainer(object):
     def train_epoch(self):
         losses = 0.0
         for batch_index, (data) in enumerate(self.trainloader, 1):
-            if batch_index % 1 == 0:
+            if batch_index % 50 == 0:
                 print("Step {}".format(batch_index))
+                print("Average Loss so far: {}".format(losses / batch_index))
             # Split data tuple
             onehot, strokes = data
             # Wrap it in Variables
@@ -133,14 +155,25 @@ class Trainer(object):
                 onehot, strokes = onehot.cuda(), strokes.cuda()
             onehot, strokes = Variable(onehot), Variable(strokes)
             # Main Model Forward Step
-            all_output = []
-            print(strokes.size())
-            for idx in range(strokes.size(1)):
+            self.model.reset_state()
+            loss = None
+            snapshot_loss = None
+            for idx in range(strokes.size(1)-1):
                 output = self.model(strokes[:, idx:idx+1, :], onehot)
-                all_output.append(output)
-            # Loss Computation
-            loss = self.criterion(output, strokes)
-            print("loss = {:.3f}".format(loss.data[0]))
+                # Loss Computation
+                if loss is None:
+                    loss = self.criterion(output, strokes[:, idx:idx+1, :]) / strokes.size(1)
+                else:
+                    loss = loss + self.criterion(output, strokes[:, idx:idx + 1, :]) / strokes.size(1)
+                if self.params.optimizer == 'SVRG':
+                    # Snapshot Model Forward Backward
+                    snapshot_output = self.snapshot_model(strokes[:, idx:idx+1, :], onehot)
+                    if snapshot_loss is None:
+                        snapshot_loss = self.criterion(snapshot_output, strokes[:, idx:idx+1, :]) / strokes.size(1)
+                    else:
+                        snapshot_loss = snapshot_loss \
+                                        + self.criterion(snapshot_output, strokes[:, idx:idx + 1, :]) / strokes.size(1)
+            #print("loss = {:.3f}".format(loss.data[0]))
             inf = float("inf")
             if loss.data[0] == inf or loss.data[0] == -inf:
                 print("Warning, received inf loss. Skipping it")
@@ -155,9 +188,6 @@ class Trainer(object):
             # Clip gradients
             clip_grad_norm(self.model.parameters(), self.params.max_norm)
             if self.params.optimizer == 'SVRG':
-                # Snapshot Model Forward Backward
-                snapshot_output = self.snapshot_model(onehot)
-                snapshot_loss = self.criterion(snapshot_output, strokes)
                 self.snapshot_model.zero_grad()
                 snapshot_loss.backward()
                 clip_grad_norm(self.snapshot_model.parameters(), self.params.max_norm)
@@ -165,7 +195,7 @@ class Trainer(object):
             self.optimizer.step()
             if self.useGPU is True:
                 torch.cuda.synchronize()
-            del onehot, strokes, data, loss, output
+            del onehot, strokes, data
         # Compute the average loss for this epoch
         avg_loss = losses / len(self.trainloader)
         if self.params.optimizer == 'SVRG':
@@ -174,7 +204,33 @@ class Trainer(object):
         return avg_loss
 
     def test_epoch(self):
-        pass
+        losses = 0.0
+        for data in self.validationloader:
+            # Split data tuple
+            onehot, strokes = data
+            # Wrap it in Variables
+            if self.useGPU is True:
+                onehot, strokes = onehot.cuda(), strokes.cuda()
+            onehot, strokes = Variable(onehot, volatile=True), Variable(strokes, volatile=True)
+            # Main Model Forward Step
+            self.model.reset_state()
+            loss = None
+            for idx in range(strokes.size(1) - 1):
+                output = self.model(strokes[:, idx:idx + 1, :], onehot)
+                # Loss Computation
+                if loss is None:
+                    loss = self.criterion(output, strokes[:, idx:idx + 1, :]) / strokes.size(1)
+                else:
+                    loss = loss + self.criterion(output, strokes[:, idx:idx + 1, :]) / strokes.size(1)
+            print("validation loss = {:.3f}".format(loss.data[0]))
+            inf = float("inf")
+            if loss.data[0] == inf or loss.data[0] == -inf:
+                print("Warning, received inf loss. Skipping it")
+            elif loss.data[0] != loss.data[0]:
+                print("Warning, received NaN loss.")
+            else:
+                losses = losses + loss.data[0]
+        return losses / len(self.validationloader)
 
     def optimizer_select(self):
         if self.params.optimizer == 'Adam':
