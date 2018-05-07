@@ -15,18 +15,15 @@ class HandwritingLoss(Module):
         y_data = stroke[0, 0, 1]
         eos_data = stroke[0, 0, 2]
         N = self.bivariateGaussian(x_data, y_data, mu1, mu2, sigma1, sigma2, rho)
-        Pr = pi * N
-        Pr = torch.clamp(Pr, 1e-20, torch.max(Pr).data[0])
-        loss = - torch.log(Pr) \
-               - torch.log(eos * eos_data + (1 - eos) * (1 - eos_data))
-        return torch.sum(loss)
+        Pr = torch.sum(pi * N)
+        loss = - torch.log(Pr + 1e-20) \
+               - torch.log(eos * eos_data + (1.0 - eos) * (1.0 - eos_data))
+        return loss.view(1)
 
     def bivariateGaussian(self, x, y, mu1, mu2, sigma1, sigma2, rho):
-        x_mu1 = x - mu1
-        y_mu2 = y - mu2
-        Z = torch.pow(x_mu1, 2)/sigma1 \
-            + torch.pow(y_mu2, 2)/sigma2 \
-            - 2 * rho * x_mu1 * y_mu2 / (sigma1 * sigma2)
-        N = torch.exp(-Z / (2*(1 - torch.pow(rho, 2)))) \
-            / (2 * np.pi * sigma1 * sigma2 * torch.sqrt(1 - torch.pow(rho, 2)))
+        Z = ((x - mu1) / sigma1) ** 2.0 \
+            + ((y - mu2) / sigma2) ** 2.0 \
+            - 2.0 * rho * (x - mu1) * (y - mu2) / (sigma1 * sigma2)
+        N = torch.exp(- 0.5 * Z / (1.0 - rho ** 2.0)) \
+            / (2.0 * np.pi * sigma1 * sigma2 * torch.sqrt(1.0 - rho ** 2.0))
         return N

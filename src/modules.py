@@ -13,15 +13,13 @@ class GaussianWindow(Module):
     def forward(self, input_, onehot, prev_kappa=None):
         abk_hats = self.parameter_layer(input_)
         abk = torch.exp(abk_hats)
-        alpha, beta, kappa = torch.chunk(abk, 3, dim=2)
-        if prev_kappa is None:
-            prev_kappa = kappa
-        else:
-            kappa, prev_kappa = kappa + prev_kappa, kappa
+        alpha, beta, kappa = abk.chunk(3, dim=2)
+        if prev_kappa is not None:
+            kappa = kappa + prev_kappa
         u = torch.autograd.Variable(torch.arange(0, onehot.size(1)).view(-1, 1).expand(-1, kappa.size(2)))
-        phi = torch.sum(alpha * torch.exp(-beta * torch.pow(kappa - u, 2)), dim=2).view(1, 1, -1)
+        phi = torch.sum(alpha * torch.exp(-beta * ((kappa - u) ** 2)), dim=2).view(1, -1)
         window = torch.matmul(phi, onehot)
-        return window, prev_kappa
+        return window, kappa
 
     def __repr__(self):
         s = '{name}(input_size={input_size}, num_components={num_components})'
@@ -38,9 +36,11 @@ class MDN(Module):
     def forward(self, input_):
         parameters_hats = self.parameter_layer(input_)
         eos_hat = parameters_hats[:, :, 0:1]
-        pi_hat, mu1, mu2, sigma1_hat, sigma2_hat, rho_hat = torch.chunk(parameters_hats[:, :, 1:], 6, dim=2)
-        eos = F.sigmoid(eos_hat)
+        pi_hat, mu1_hat, mu2_hat, sigma1_hat, sigma2_hat, rho_hat = torch.chunk(parameters_hats[:, :, 1:], 6, dim=2)
+        eos = F.sigmoid(-eos_hat)
         pi = F.softmax(pi_hat, dim=2)
+        mu1 = mu1_hat
+        mu2 = mu2_hat
         sigma1 = torch.exp(sigma1_hat)
         sigma2 = torch.exp(sigma2_hat)
         rho = F.tanh(rho_hat)

@@ -162,17 +162,17 @@ class Trainer(object):
                 output = self.model(strokes[:, idx:idx+1, :], onehot)
                 # Loss Computation
                 if loss is None:
-                    loss = self.criterion(output, strokes[:, idx:idx+1, :]) / strokes.size(1)
+                    loss = self.criterion(output, strokes[:, idx+1:idx+2, :]) / strokes.size(1)
                 else:
-                    loss = loss + self.criterion(output, strokes[:, idx:idx + 1, :]) / strokes.size(1)
+                    loss = loss + self.criterion(output, strokes[:, idx+1:idx+2, :]) / strokes.size(1)
                 if self.params.optimizer == 'SVRG':
                     # Snapshot Model Forward Backward
                     snapshot_output = self.snapshot_model(strokes[:, idx:idx+1, :], onehot)
                     if snapshot_loss is None:
-                        snapshot_loss = self.criterion(snapshot_output, strokes[:, idx:idx+1, :]) / strokes.size(1)
+                        snapshot_loss = self.criterion(snapshot_output, strokes[:, idx+1:idx+2, :]) / strokes.size(1)
                     else:
                         snapshot_loss = snapshot_loss \
-                                        + self.criterion(snapshot_output, strokes[:, idx:idx + 1, :]) / strokes.size(1)
+                                        + self.criterion(snapshot_output, strokes[:, idx+1:idx+2, :]) / strokes.size(1)
             #print("loss = {:.3f}".format(loss.data[0]))
             inf = float("inf")
             if loss.data[0] == inf or loss.data[0] == -inf:
@@ -265,6 +265,7 @@ class Trainer(object):
         package = {
             'state_dict': model.state_dict(),
             'params': self.params._asdict(),
-            'optim_dict': self.optimizer.state_dict()
+            'optim_dict': self.optimizer.state_dict(),
+            'alphabet_size': len(self.alphabet)
         }
         return package

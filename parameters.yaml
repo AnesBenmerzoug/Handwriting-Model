@@ -11,7 +11,7 @@ testModelPath: './trained_models/'
 
 # Dataset Parameters
 DatasetDir: './data/'
-num_workers: 1
+num_workers: 0
 
 # Training Parameters
 trainModel: True
@@ -19,14 +19,10 @@ useGPU: False
 resumeTraining: False
 num_epochs: 20
 num_processes: 1
-max_norm: 10
+max_norm: 1
 # Optimizer Parameters
 optimizer: 'Adam'
 learning_rate: 1.0e-3
 momentum: 0.9
 nesterov: True
 update_frequency: 2
-# Learning Rate Scheduler Parameters
-T_max: 20
-T_mult: 2
-eta_min: 1.0e-3

@@ -26,6 +26,9 @@ class HandwritingGenerator(Module):
         self.hidden1 = None
         self.hidden2 = None
 
+        # Initiliaze parameters
+        self.reset_parameters()
+
     def forward(self, strokes, onehot):
         output, self.hidden1 = self.lstm1_layer(strokes, self.hidden1)
         window, self.prev_kappa = self.window_layer(output, onehot, self.prev_kappa)
@@ -57,7 +60,10 @@ class HandwritingGenerator(Module):
     @classmethod
     def load_model(cls, package, useGPU=False):
         params = package['parameters']
-        model = cls()
+        model = cls(alphabet_size=package['alphabet_size'],
+                    hidden_size=params['hidden_size'],
+                    num_window_components=params['num_window_components'],
+                    num_mixture_components=params['num_mixture_components'])
         model.load_state_dict(package['state_dict'])
         if useGPU is True:
             model = model.cuda()
