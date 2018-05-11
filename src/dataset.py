@@ -1,4 +1,4 @@
-from __future__ import print_function
+from __future__ import print_function, division
 import torch
 from torch.utils.data import Dataset
 import xml.etree.ElementTree as ET
@@ -19,17 +19,17 @@ class IAMDataset(Dataset):
                                 'Training', 'Validation', 'Testing'
         """
         self.params = parameters
-        assert(setType.lower() == 'training' or setType.lower() == 'validation' or setType.lower() == 'testing')
+        assert(setType.lower() == 'training' or setType.lower() == 'testing')
         self.setType = setType.lower()
         self.data_filename = os.path.join(self.params.DatasetDir, self.setType + '_data.pickled')
         # '_' represents unknown characters, characters not in the alphabet
-        self.alphabet = ['_', ' ', '-', '.', ',', "'", '"', '!', '?', '(', ')'] + \
-                        [c for c in string.digits + string.ascii_uppercase + string.ascii_lowercase]
+        self.alphabet = ['_'] + [c for c in string.digits + string.ascii_uppercase + string.ascii_lowercase]
         self.length = 0
+        self.scale_factor = 10
 
-        self.ascii = None
-        self.strokes = None
-        self.ascii_onehot = None
+        self.ascii = []
+        self.strokes = []
+        self.ascii_onehot = []
 
         if not (os.path.exists(self.data_filename)):
             print("Creating file {}".format(self.data_filename))
@@ -38,11 +38,6 @@ class IAMDataset(Dataset):
             print("File {} exists already".format(self.data_filename))
 
         self.load_data()
-
-    def get_alphabet(self):
-        with open(os.path.join(self.params.DatasetDir, 'task1', 'letters')) as alphabet:
-            for letter in alphabet:
-                self.alphabet.append(letter.replace('\n', ''))
 
     def prepocess_data(self):
         data_path_list = self.create_data_path_list()
@@ -112,9 +107,8 @@ class IAMDataset(Dataset):
             pickle.dump([text_array, strokes_array], f)
 
     def create_data_path_list(self):
-        type_filename = ('trainset.txt', 'testset_t.txt') if self.setType == 'train' else \
-            'testset_t.txt' if self.setType == 'validate' else \
-            'testset_f.txt'
+        type_filename = ('trainset.txt', 'testset_t.txt', 'testset_v.txt') if self.setType == 'train' \
+                        else 'testset_f.txt'
         data_path_list = []
         for filename in os.listdir(os.path.join(self.params.DatasetDir, 'task1')):
             if filename in type_filename:
@@ -143,10 +137,16 @@ class IAMDataset(Dataset):
 
     def load_data(self):
         with open(self.data_filename, 'rb') as f:
-            self.ascii, self.strokes = pickle.load(f)
-        self.length = len(self.ascii)
+            raw_ascii, raw_strokes = pickle.load(f)
         self.ascii_onehot = []
-        for sentence in self.ascii:
+        for sentence, stroke in zip(raw_ascii, raw_strokes):
+            if len(stroke) < self.params.min_num_points:
+                continue
+            self.ascii.append(sentence)
+            stroke = [[point[0] / self.scale_factor, point[1] / self.scale_factor, point[2] * 1.0]
+                      for point in stroke]
+            stroke.insert(0, [0.0, 0.0, 1.0])
+            self.strokes.append(stroke)
             onehot = np.zeros(shape=(len(sentence), len(self.alphabet)), dtype=np.uint8).tolist()
             for i, c in enumerate(sentence):
                 if c in self.alphabet:
@@ -154,6 +154,7 @@ class IAMDataset(Dataset):
                 else:
                     onehot[i][0] = 1
             self.ascii_onehot.append(onehot)
+        self.length = len(self.ascii)
 
     def __len__(self):
         return self.length

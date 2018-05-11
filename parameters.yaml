@@ -5,13 +5,14 @@ input_size: 3
 hidden_size: 200
 num_window_components: 10
 num_mixture_components: 20
-batch_size: 1
+batch_size: 2
 savedModelDir: './trained_models/'
 testModelPath: './trained_models/Trained_Model_748_10.05.2018_19.33'
 
 # Dataset Parameters
 DatasetDir: './data/'
 num_workers: 0
+min_num_points: 300
 
 # Training Parameters
 trainModel: True

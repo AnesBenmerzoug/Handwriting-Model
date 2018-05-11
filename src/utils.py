@@ -13,12 +13,9 @@ def plotlosses(losses, title='', xlabel='', ylabel=''):
 
 
 def plotstrokes(strokes):
-    x = strokes[:, :, 0].numpy()
-    y = strokes[:, :, 1].numpy()
     # Cumulative sum, because they are represented as relative displacement
-    for idx in range(1, x.shape[1]):
-        x[:, idx] += x[:, idx-1]
-        y[:, idx] += y[:, idx-1]
+    x = torch.cumsum(strokes[:, :, 0], dim=1).numpy()
+    y = torch.cumsum(strokes[:, :, 1], dim=1).numpy()
     eos = strokes[:, :, 2]
     eos_indices = (eos.nonzero()[:, 1]).numpy()
     plt.figure(figsize=(20, 2))

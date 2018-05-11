@@ -8,6 +8,7 @@ from torch.nn.utils import clip_grad_norm
 from src.dataset import IAMDataset
 from src.optimizer import SVRG
 from src.model import HandwritingGenerator
+from src.batchifier import Batchifier
 from src.loss import HandwritingLoss
 from collections import namedtuple
 from copy import deepcopy
@@ -22,17 +23,17 @@ class Trainer(object):
 
         # Initialize datasets
         self.trainset = IAMDataset(self.params, setType='training')
-        self.validationset = IAMDataset(self.params, setType='validation')
 
         self.alphabet = self.trainset.alphabet
+
+        # Batchifier
+        self.batchifier = Batchifier(self.params)
 
         # Initialize loaders
         self.trainloader = DataLoader(self.trainset, batch_size=self.params.batch_size,
                                       shuffle=False, num_workers=self.params.num_workers,
-                                      sampler=RandomSampler(self.trainset))
-
-        self.validationloader = DataLoader(self.validationset, batch_size=self.params.batch_size,
-                                           shuffle=False, num_workers=self.params.num_workers)
+                                      sampler=RandomSampler(self.trainset),
+                                      collate_fn=self.batchifier.collate_fn)
 
         # Checking for GPU
         self.useGPU = self.params.useGPU and torch.cuda.is_available()
@@ -129,14 +130,8 @@ class Trainer(object):
 
             print("Average loss = {:.3f}".format(avg_losses[epoch]))
 
-            # Switch to eval and go through the test set
-            self.model.eval()
-
-            # Go through the test set
-            test_loss = self.test_epoch()
-            print("In Epoch {}, Obtained Average Validation Loss = {:.3f}".format(epoch + 1, test_loss))
-            if min_Loss is None or min_Loss >= test_loss:
-                min_Loss = test_loss
+            if min_Loss is None or min_Loss >= avg_losses[epoch]:
+                min_Loss = avg_losses[epoch]
                 best_model = self.model.state_dict()
         # Saving trained model
         self.save_model(best_model, min_Loss * 100)
@@ -150,8 +145,6 @@ class Trainer(object):
                 print("Average Loss so far: {}".format(losses / batch_index))
             # Split data tuple
             onehot, strokes = data
-            # Add an initial (0.0, 0.0, 1.0) point to strokes
-            strokes = torch.cat((torch.FloatTensor([[[0.0, 0.0, 1.0]]]), strokes), dim=1)
             # Wrap it in Variables
             if self.useGPU is True:
                 onehot, strokes = onehot.cuda(), strokes.cuda()
@@ -203,36 +196,6 @@ class Trainer(object):
             # Take a snapshot of the latest parameters
             self.optimizer.take_snapshot()
         return avg_loss
-
-    def test_epoch(self):
-        losses = 0.0
-        for data in self.validationloader:
-            # Split data tuple
-            onehot, strokes = data
-            # Add an initial (0.0, 0.0, 1.0) point to strokes
-            strokes = torch.cat((torch.FloatTensor([[[0.0, 0.0, 1.0]]]), strokes), dim=1)
-            # Wrap it in Variables
-            if self.useGPU is True:
-                onehot, strokes = onehot.cuda(), strokes.cuda()
-            onehot, strokes = Variable(onehot, volatile=True), Variable(strokes, volatile=True)
-            # Main Model Forward Step
-            self.model.reset_state()
-            loss = None
-            for idx in range(strokes.size(1) - 1):
-                output = self.model(strokes[:, idx:idx + 1, :], onehot)
-                # Loss Computation
-                if loss is None:
-                    loss = self.criterion(output, strokes[:, idx:idx + 1, :]) / strokes.size(1)
-                else:
-                    loss = loss + self.criterion(output, strokes[:, idx:idx + 1, :]) / strokes.size(1)
-            inf = float("inf")
-            if loss.data[0] == inf or loss.data[0] == -inf:
-                print("Warning, received inf loss. Skipping it")
-            elif loss.data[0] != loss.data[0]:
-                print("Warning, received NaN loss.")
-            else:
-                losses = losses + loss.data[0]
-        return losses / len(self.validationloader)
 
     def optimizer_select(self):
         if self.params.optimizer == 'Adam':
