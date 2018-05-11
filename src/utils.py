@@ -1,17 +1,10 @@
-from torchvision.utils import make_grid
+import torch
 import matplotlib.pyplot as plt
 import numpy as np
 
 
-def imgshow(img):
-    img = make_grid(img).numpy()
-    img = np.transpose(img, (1, 2, 0))
-    plt.imshow(img)
-    plt.show()
-
-
 def plotlosses(losses, title='', xlabel='', ylabel=''):
-    epochs = np.arange(losses.size, dtype=np.uint8) + 1
+    epochs = np.arange(losses.size) + 1
     plt.plot(epochs, losses)
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
@@ -19,13 +12,26 @@ def plotlosses(losses, title='', xlabel='', ylabel=''):
     plt.show()
 
 
-def plotaccuracy(accuracy, classes, title='', xlabel='', ylabel=''):
-    indices = np.arange(len(classes), dtype=np.uint8)
-    width = 0.35
-    plt.bar(indices, accuracy, width)
-    plt.xlabel(xlabel)
-    plt.ylabel(ylabel)
-    plt.title(title)
-    plt.xticks(indices, classes)
+def plotstrokes(strokes):
+    x = strokes[:, :, 0].numpy()
+    y = strokes[:, :, 1].numpy()
+    # Cumulative sum, because they are represented as relative displacement
+    for idx in range(1, x.shape[1]):
+        x[:, idx] += x[:, idx-1]
+        y[:, idx] += y[:, idx-1]
+    eos = strokes[:, :, 2]
+    eos_indices = (eos.nonzero()[:, 1]).numpy()
+    plt.figure(figsize=(20, 2))
+    idx = 0
+    while idx != eos_indices.shape[0]:
+        start_index = eos_indices[idx]+1
+        try:
+            end_index = eos_indices[idx+1]
+        except IndexError:
+            end_index = x.shape[1]
+        plt.plot(x[0, start_index:end_index], y[0, start_index:end_index], 'b-', linewidth=2.0)
+        idx += 1
+    plt.gca().invert_yaxis()
     plt.show()
+    pass
 

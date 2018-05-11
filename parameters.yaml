@@ -2,12 +2,12 @@
 
 # Model Parameters
 input_size: 3
-hidden_size: 30
+hidden_size: 200
 num_window_components: 10
 num_mixture_components: 20
 batch_size: 1
 savedModelDir: './trained_models/'
-testModelPath: './trained_models/'
+testModelPath: './trained_models/Trained_Model_748_10.05.2018_19.33'
 
 # Dataset Parameters
 DatasetDir: './data/'

@@ -31,7 +31,7 @@ if __name__ == "__main__":
         # Testing the model
         tester.test_random_sample()
         # Testing the model accuracy
-        #total_accuracy, class_accuracy = tester.test_model()
+        #test_losses = tester.test_model()
 
     print("Finishing time: {}".format(time.asctime()))
 

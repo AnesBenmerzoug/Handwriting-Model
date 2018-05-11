@@ -63,7 +63,7 @@ class IAMDataset(Dataset):
                 y_offset = min([float(root[0][i].attrib['y']) for i in range(1, 4)])
                 strokes = []
                 for stroke in root[1].findall('Stroke'):
-                    points = [(0.0, 0.0)]
+                    points = []
                     for point in stroke.findall('Point'):
                         points.append((float(point.attrib['x']) - x_offset,
                                        float(point.attrib['y']) - y_offset))
@@ -112,12 +112,12 @@ class IAMDataset(Dataset):
             pickle.dump([text_array, strokes_array], f)
 
     def create_data_path_list(self):
-        type_filename = 'trainset.txt' if self.setType == 'train' else \
-            'testset_v.txt' if self.setType == 'validate' else \
-                'testset_f.txt'
+        type_filename = ('trainset.txt', 'testset_t.txt') if self.setType == 'train' else \
+            'testset_t.txt' if self.setType == 'validate' else \
+            'testset_f.txt'
         data_path_list = []
         for filename in os.listdir(os.path.join(self.params.DatasetDir, 'task1')):
-            if filename == type_filename:
+            if filename in type_filename:
                 with open(os.path.join(self.params.DatasetDir, 'task1', filename)) as setTextFile:
                     for line in setTextFile:
                         ascii_path = os.path.join(self.params.DatasetDir, 'ascii')

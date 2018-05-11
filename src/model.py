@@ -1,6 +1,7 @@
 import torch
-from torch.nn.modules import Module, LSTM, Linear
+from torch.nn.modules import Module, LSTM
 from src.modules import GaussianWindow, MDN
+import random
 
 
 class HandwritingGenerator(Module):
@@ -33,11 +34,15 @@ class HandwritingGenerator(Module):
         output, self.hidden1 = self.lstm1_layer(strokes, self.hidden1)
         window, self.prev_kappa = self.window_layer(output, onehot, self.prev_kappa)
         output, self.hidden2 = self.lstm2_layer(torch.cat((strokes, output, window), dim=2), self.hidden2)
-        mdn_parameters = self.output_layer(output)  # eos, pi, mu1, mu2, sigma1, sigma2, rho
-        return mdn_parameters
+        eos, pi, mu1, mu2, sigma1, sigma2, rho = self.output_layer(output)
+        return eos, pi, mu1, mu2, sigma1, sigma2, rho
 
     def sample_bivariate_gaussian(self, pi, mu1, mu2, sigma1, sigma2, rho):
-        pass
+        # Pick the distribution with the highest proportion from the MDN
+        _, idx = torch.max(pi, dim=2)
+        X = torch.normal(means=torch.cat((mu1[:, :, idx], mu2[:, :, idx]), dim=2),
+                         std=torch.cat((sigma1[:, :, idx], sigma2[:, :, idx]), dim=2)).squeeze(3)
+        return X[:, :, 0:1], X[:, :, 1:2]
 
     def reset_state(self):
         self.prev_kappa = None
@@ -59,7 +64,7 @@ class HandwritingGenerator(Module):
 
     @classmethod
     def load_model(cls, package, useGPU=False):
-        params = package['parameters']
+        params = package['params']
         model = cls(alphabet_size=package['alphabet_size'],
                     hidden_size=params['hidden_size'],
                     num_window_components=params['num_window_components'],

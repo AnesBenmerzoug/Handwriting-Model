@@ -134,7 +134,7 @@ class Trainer(object):
 
             # Go through the test set
             test_loss = self.test_epoch()
-            print("In Epoch {}, Obtained Average Loss= {:.3f}".format(epoch + 1, test_loss))
+            print("In Epoch {}, Obtained Average Validation Loss = {:.3f}".format(epoch + 1, test_loss))
             if min_Loss is None or min_Loss >= test_loss:
                 min_Loss = test_loss
                 best_model = self.model.state_dict()
@@ -150,6 +150,8 @@ class Trainer(object):
                 print("Average Loss so far: {}".format(losses / batch_index))
             # Split data tuple
             onehot, strokes = data
+            # Add an initial (0.0, 0.0, 1.0) point to strokes
+            strokes = torch.cat((torch.FloatTensor([[[0.0, 0.0, 1.0]]]), strokes), dim=1)
             # Wrap it in Variables
             if self.useGPU is True:
                 onehot, strokes = onehot.cuda(), strokes.cuda()
@@ -173,7 +175,6 @@ class Trainer(object):
                     else:
                         snapshot_loss = snapshot_loss \
                                         + self.criterion(snapshot_output, strokes[:, idx+1:idx+2, :]) / strokes.size(1)
-            #print("loss = {:.3f}".format(loss.data[0]))
             inf = float("inf")
             if loss.data[0] == inf or loss.data[0] == -inf:
                 print("Warning, received inf loss. Skipping it")
@@ -208,6 +209,8 @@ class Trainer(object):
         for data in self.validationloader:
             # Split data tuple
             onehot, strokes = data
+            # Add an initial (0.0, 0.0, 1.0) point to strokes
+            strokes = torch.cat((torch.FloatTensor([[[0.0, 0.0, 1.0]]]), strokes), dim=1)
             # Wrap it in Variables
             if self.useGPU is True:
                 onehot, strokes = onehot.cuda(), strokes.cuda()
@@ -222,7 +225,6 @@ class Trainer(object):
                     loss = self.criterion(output, strokes[:, idx:idx + 1, :]) / strokes.size(1)
                 else:
                     loss = loss + self.criterion(output, strokes[:, idx:idx + 1, :]) / strokes.size(1)
-            print("validation loss = {:.3f}".format(loss.data[0]))
             inf = float("inf")
             if loss.data[0] == inf or loss.data[0] == -inf:
                 print("Warning, received inf loss. Skipping it")
