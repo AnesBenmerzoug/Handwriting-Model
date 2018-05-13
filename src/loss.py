@@ -2,6 +2,7 @@ from __future__ import print_function, division
 import torch
 from torch.nn import Module
 import numpy as np
+from functools import reduce
 
 
 class HandwritingLoss(Module):
@@ -11,14 +12,13 @@ class HandwritingLoss(Module):
 
     def forward(self, mdn_parameters, stroke):
         eos, pi, mu1, mu2, sigma1, sigma2, rho = mdn_parameters
-        x_data = stroke[0, 0, 0]
-        y_data = stroke[0, 0, 1]
-        eos_data = stroke[0, 0, 2]
+        x_data, y_data, eos_data = stroke.chunk(3, dim=2)
         N = self.bivariateGaussian(x_data, y_data, mu1, mu2, sigma1, sigma2, rho)
-        Pr = torch.sum(pi * N)
-        loss = - torch.log(Pr + 1e-20) \
-               - torch.log(eos * eos_data + (1.0 - eos) * (1.0 - eos_data))
-        return loss.view(1)
+        term1 = -((pi * N).sum(dim=2, keepdim=True) + 1e-20).log()
+        term2 = -(eos * eos_data + (1.0 - eos) * (1.0 - eos_data)).log()
+        loss = term1 + term2
+        reduction_factor = reduce((lambda x, y: x * y), loss.size())
+        return loss.sum() / reduction_factor
 
     def bivariateGaussian(self, x, y, mu1, mu2, sigma1, sigma2, rho):
         Z = ((x - mu1) / sigma1) ** 2.0 \

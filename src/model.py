@@ -49,6 +49,14 @@ class HandwritingGenerator(Module):
         self.hidden1 = None
         self.hidden2 = None
 
+    def detach_state(self):
+        if self.prev_kappa is not None:
+            self.prev_kappa = self.prev_kappa.detach()
+        if self.hidden1 is not None:
+            self.hidden1 = [state.detach() for state in self.hidden1]
+        if self.hidden2 is not None:
+            self.hidden2 = [state.detach() for state in self.hidden2]
+
     def reset_parameters(self):
         for parameter in self.parameters():
             if len(parameter.size()) == 2:

@@ -19,8 +19,7 @@ trainModel: True
 useGPU: False
 resumeTraining: False
 num_epochs: 20
-num_processes: 1
-max_norm: 1
+max_norm: 10
 # Optimizer Parameters
 optimizer: 'Adam'
 learning_rate: 1.0e-3

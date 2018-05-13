@@ -16,7 +16,9 @@ class GaussianWindow(Module):
         alpha, beta, kappa = abk.chunk(3, dim=2)
         if prev_kappa is not None:
             kappa = kappa + prev_kappa
-        u = torch.autograd.Variable(torch.arange(0, onehot.size(1)).view(1, -1, 1).expand(onehot.size(0), -1, kappa.size(2)))
+        u = torch.autograd.Variable(torch.arange(0, onehot.size(1)))
+        u = u.view(1, -1, 1)
+        u = u.expand(onehot.size(0), -1, kappa.size(2))
         phi = torch.sum(alpha * torch.exp(-beta * ((kappa - u) ** 2)), dim=2).unsqueeze(1)
         window = torch.matmul(phi, onehot)
         return window, kappa

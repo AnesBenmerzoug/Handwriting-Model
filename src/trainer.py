@@ -94,6 +94,7 @@ class Trainer(object):
             self.model.reset_state()
             snapshot_loss = None
             for idx in range(strokes.size(1) - 1):
+                self.snapshot_model.detach_state()
                 output = self.model(strokes[:, idx:idx + 1, :], onehot)
                 # Loss Computation
                 if snapshot_loss is None:
@@ -140,7 +141,7 @@ class Trainer(object):
     def train_epoch(self):
         losses = 0.0
         for batch_index, (data) in enumerate(self.trainloader, 1):
-            if batch_index % 50 == 0:
+            if batch_index % 1 == 0:
                 print("Step {}".format(batch_index))
                 print("Average Loss so far: {}".format(losses / batch_index))
             # Split data tuple
@@ -154,41 +155,35 @@ class Trainer(object):
             loss = None
             snapshot_loss = None
             for idx in range(strokes.size(1)-1):
+                self.model.detach_state()
                 output = self.model(strokes[:, idx:idx+1, :], onehot)
                 # Loss Computation
-                if loss is None:
-                    loss = self.criterion(output, strokes[:, idx+1:idx+2, :]) / strokes.size(1)
-                else:
-                    loss = loss + self.criterion(output, strokes[:, idx+1:idx+2, :]) / strokes.size(1)
+                loss = self.criterion(output, strokes[:, idx+1:idx+2, :]) / strokes.size(1)
                 if self.params.optimizer == 'SVRG':
                     # Snapshot Model Forward Backward
                     snapshot_output = self.snapshot_model(strokes[:, idx:idx+1, :], onehot)
-                    if snapshot_loss is None:
-                        snapshot_loss = self.criterion(snapshot_output, strokes[:, idx+1:idx+2, :]) / strokes.size(1)
-                    else:
-                        snapshot_loss = snapshot_loss \
-                                        + self.criterion(snapshot_output, strokes[:, idx+1:idx+2, :]) / strokes.size(1)
-            inf = float("inf")
-            if loss.data[0] == inf or loss.data[0] == -inf:
-                print("Warning, received inf loss. Skipping it")
-            elif loss.data[0] != loss.data[0]:
-                print("Warning, received NaN loss.")
-            else:
-                losses = losses + loss.data[0]
-            # Zero the optimizer gradient
-            self.optimizer.zero_grad()
-            # Backward step
-            loss.backward()
-            # Clip gradients
-            clip_grad_norm(self.model.parameters(), self.params.max_norm)
-            if self.params.optimizer == 'SVRG':
-                self.snapshot_model.zero_grad()
-                snapshot_loss.backward()
-                clip_grad_norm(self.snapshot_model.parameters(), self.params.max_norm)
-            # Weight Update
-            self.optimizer.step()
-            if self.useGPU is True:
-                torch.cuda.synchronize()
+                    snapshot_loss = self.criterion(snapshot_output, strokes[:, idx+1:idx+2, :]) / strokes.size(1)
+                inf = float("inf")
+                if loss.data[0] == inf or loss.data[0] == -inf:
+                    print("Warning, received inf loss. Skipping it")
+                elif loss.data[0] != loss.data[0]:
+                    print("Warning, received NaN loss.")
+                else:
+                    losses = losses + loss.data[0]
+                # Zero the optimizer gradient
+                self.optimizer.zero_grad()
+                # Backward step
+                loss.backward()
+                # Clip gradients
+                clip_grad_norm(self.model.parameters(), self.params.max_norm)
+                if self.params.optimizer == 'SVRG':
+                    self.snapshot_model.zero_grad()
+                    snapshot_loss.backward()
+                    clip_grad_norm(self.snapshot_model.parameters(), self.params.max_norm)
+                # Weight Update
+                self.optimizer.step()
+                if self.useGPU is True:
+                    torch.cuda.synchronize()
             del onehot, strokes, data
         # Compute the average loss for this epoch
         avg_loss = losses / len(self.trainloader)
