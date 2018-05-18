@@ -2,27 +2,30 @@
 
 # Model Parameters
 input_size: 3
-hidden_size: 200
+hidden_size: 100
 num_window_components: 10
 num_mixture_components: 20
-batch_size: 2
+batch_size: 32
 savedModelDir: './trained_models/'
-testModelPath: './trained_models/Trained_Model_748_10.05.2018_19.33'
+testModelPath: './trained_models/'
 
 # Dataset Parameters
 DatasetDir: './data/'
 num_workers: 0
 min_num_points: 300
 
+# Testing Parameters
+probability_bias: 0.5
+
 # Training Parameters
 trainModel: True
 useGPU: False
 resumeTraining: False
-num_epochs: 20
-max_norm: 10
+num_epochs: 50
+max_norm: 100
 # Optimizer Parameters
 optimizer: 'Adam'
-learning_rate: 1.0e-3
+learning_rate: 1.0e-2
 momentum: 0.9
 nesterov: True
 update_frequency: 2

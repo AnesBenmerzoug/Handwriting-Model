@@ -1,4 +1,5 @@
 import torch
+from torch.autograd.variable import Variable
 from torch.nn.modules import Module, LSTM
 from src.modules import GaussianWindow, MDN
 import random
@@ -7,9 +8,11 @@ import random
 class HandwritingGenerator(Module):
     def __init__(self, alphabet_size, hidden_size, num_window_components, num_mixture_components):
         super(HandwritingGenerator, self).__init__()
+        self.alphabet_size = alphabet_size
         # First LSTM layer, takes as input a tuple (x, y, eol)
-        self.lstm1_layer = LSTM(input_size=3,
-                                hidden_size=hidden_size)
+        self.lstm1_layer = LSTM(input_size=3 + alphabet_size,
+                                hidden_size=hidden_size,
+                                batch_first=True)
         # Gaussian Window layer
         self.window_layer = GaussianWindow(input_size=hidden_size,
                                            num_components=num_window_components)
@@ -17,12 +20,15 @@ class HandwritingGenerator(Module):
         # the output of the first LSTM layer
         # and the output of the Window layer
         self.lstm2_layer = LSTM(input_size=3 + hidden_size + alphabet_size,
-                                hidden_size=hidden_size)
+                                hidden_size=hidden_size,
+                                batch_first=True)
+
         # Mixture Density Network Layer
         self.output_layer = MDN(input_size=hidden_size,
                                 num_mixtures=num_mixture_components)
 
         # Hidden State Variables
+        self.prev_window = None
         self.prev_kappa = None
         self.hidden1 = None
         self.hidden2 = None
@@ -30,11 +36,19 @@ class HandwritingGenerator(Module):
         # Initiliaze parameters
         self.reset_parameters()
 
-    def forward(self, strokes, onehot):
-        output, self.hidden1 = self.lstm1_layer(strokes, self.hidden1)
-        window, self.prev_kappa = self.window_layer(output, onehot, self.prev_kappa)
-        output, self.hidden2 = self.lstm2_layer(torch.cat((strokes, output, window), dim=2), self.hidden2)
-        eos, pi, mu1, mu2, sigma1, sigma2, rho = self.output_layer(output)
+    def forward(self, strokes, onehot, bias=None):
+        if self.prev_window is None:
+            self.prev_window = Variable(torch.zeros((strokes.size(0), strokes.size(1), self.alphabet_size)))
+        # First LSTM Layer
+        input_ = torch.cat((strokes, self.prev_window), dim=2)
+        hidden1 = self.hidden1
+        output, self.hidden1 = self.lstm1_layer(input_, hidden1)
+        # Gaussian Window Layer
+        self.prev_window, self.prev_kappa = self.window_layer(output, onehot, self.prev_kappa)
+        # Second LSTM Layer
+        output, self.hidden2 = self.lstm2_layer(torch.cat((strokes, output, self.prev_window), dim=2), self.hidden2)
+        # MDN Layer
+        eos, pi, mu1, mu2, sigma1, sigma2, rho = self.output_layer(output, bias)
         return eos, pi, mu1, mu2, sigma1, sigma2, rho
 
     def sample_bivariate_gaussian(self, pi, mu1, mu2, sigma1, sigma2, rho):
@@ -45,11 +59,14 @@ class HandwritingGenerator(Module):
         return X[:, :, 0:1], X[:, :, 1:2]
 
     def reset_state(self):
+        self.prev_window = None
         self.prev_kappa = None
         self.hidden1 = None
         self.hidden2 = None
 
     def detach_state(self):
+        if self.prev_window is not None:
+            self.prev_window = self.prev_window.detach()
         if self.prev_kappa is not None:
             self.prev_kappa = self.prev_kappa.detach()
         if self.hidden1 is not None:

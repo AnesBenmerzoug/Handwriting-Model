@@ -35,17 +35,22 @@ class MDN(Module):
         self.num_mixtures = num_mixtures
         self.parameter_layer = Linear(in_features=input_size, out_features=1 + 6*num_mixtures)
 
-    def forward(self, input_):
+    def forward(self, input_, bias=None):
         parameters_hats = self.parameter_layer(input_)
         eos_hat = parameters_hats[:, :, 0:1]
         pi_hat, mu1_hat, mu2_hat, sigma1_hat, sigma2_hat, rho_hat = torch.chunk(parameters_hats[:, :, 1:], 6, dim=2)
         eos = F.sigmoid(-eos_hat)
-        pi = F.softmax(pi_hat, dim=2)
         mu1 = mu1_hat
         mu2 = mu2_hat
-        sigma1 = torch.exp(sigma1_hat)
-        sigma2 = torch.exp(sigma2_hat)
         rho = F.tanh(rho_hat)
+        if bias is None:
+            pi = F.softmax(pi_hat, dim=2)
+            sigma1 = torch.exp(sigma1_hat)
+            sigma2 = torch.exp(sigma2_hat)
+        else:
+            pi = F.softmax(pi_hat - bias, dim=2)
+            sigma1 = torch.exp(sigma1_hat * (1 + bias))
+            sigma2 = torch.exp(sigma2_hat * (1 + bias))
         return eos, pi, mu1, mu2, sigma1, sigma2, rho
 
     def __repr__(self):
