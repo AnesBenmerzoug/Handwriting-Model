@@ -48,6 +48,7 @@ class Trainer(object):
         else:
             print("Resuming Training")
             self.load_model(self.useGPU)
+
         print(self.model)
 
         print("Number of parameters = {}".format(self.model.num_parameters()))
@@ -92,15 +93,9 @@ class Trainer(object):
             onehot, strokes = Variable(onehot), Variable(strokes)
             # Forward Step
             self.model.reset_state()
-            snapshot_loss = None
-            for idx in range(strokes.size(1) - 1):
-                self.snapshot_model.detach_state()
-                output = self.model(strokes[:, idx:idx + 1, :], onehot)
-                # Loss Computation
-                if snapshot_loss is None:
-                    snapshot_loss = self.criterion(output, strokes[:, idx:idx + 1, :]) / strokes.size(1)
-                else:
-                    snapshot_loss = snapshot_loss + self.criterion(output, strokes[:, idx:idx + 1, :]) / strokes.size(1)
+            output = self.model(strokes[:, :-1, :], onehot)
+            # Loss Computation
+            snapshot_loss = self.criterion(output, strokes[:, 1:, :])
             # Zero the optimizer gradient
             self.optimizer.zero_grad()
             # Backward step
@@ -152,22 +147,14 @@ class Trainer(object):
             onehot, strokes = Variable(onehot), Variable(strokes)
             # Main Model Forward Step
             self.model.reset_state()
-            loss = None
-            snapshot_loss = None
-            for idx in range(strokes.size(1)-1):
-                output = self.model(strokes[:, idx:idx+1, :], onehot)
-                # Loss Computation
-                if loss is None:
-                    loss = self.criterion(output, strokes[:, idx+1:idx+2, :]) / strokes.size(1)
-                else:
-                    loss += self.criterion(output, strokes[:, idx+1:idx+2, :]) / strokes.size(1)
-                if self.params.optimizer == 'SVRG':
-                    # Snapshot Model Forward Backward
-                    snapshot_output = self.snapshot_model(strokes[:, idx:idx+1, :], onehot)
-                    if snapshot_loss is None:
-                        snapshot_loss = self.criterion(snapshot_output, strokes[:, idx+1:idx+2, :]) / strokes.size(1)
-                    else:
-                        snapshot_loss += self.criterion(snapshot_output, strokes[:, idx+1:idx+2, :]) / strokes.size(1)
+            output = self.model(strokes[:, :-1, :], onehot)
+            # Loss Computation
+            loss = self.criterion(output, strokes[:, 1:, :])
+            if self.params.optimizer == 'SVRG':
+                # Snapshot Model Forward Backward
+                snapshot_output = self.snapshot_model(strokes[:, :-1, :], onehot)
+                # Snapshot Model Loss Computation
+                snapshot_loss = self.criterion(snapshot_output, strokes[:, 1:, :])
             inf = float("inf")
             if loss.data[0] == inf or loss.data[0] == -inf:
                 print("Warning, received inf loss. Skipping it")
@@ -214,7 +201,7 @@ class Trainer(object):
     def save_model(self, model_parameters, model_accuracy):
         self.model.load_state_dict(model_parameters)
         torch.save(self.serialize(),
-                   os.path.join(self.params.savedModelDir, 'Trained_Model_{}'.format(int(model_accuracy))
+                   os.path.join(self.params.savedModelDir, 'Trained_Model_{}'.format(int(abs(model_accuracy)))
                                 + '_' + time.strftime("%d.%m.20%y_%H.%M")))
 
     def load_model(self, useGPU=False):

@@ -70,12 +70,12 @@ class Tester(object):
         self.model.reset_state()
         all_outputs = []
         input_ = strokes[:, 0:1]
-        probability_bias = 1.0
         for idx in range(strokes.size(1) - 1):
-            output = self.model(input_, onehot, probability_bias)
+            output = self.model(input_, onehot, self.params.probability_bias)
             eos, pi, mu1, mu2, sigma1, sigma2, rho = output
             x, y = self.model.sample_bivariate_gaussian(pi, mu1, mu2, sigma1, sigma2, rho)
             eos_data = eos.data
+            print(eos_data)
             threshold = eos_data.new([0.1])
             mask = Variable(eos_data.ge(threshold).float(), volatile=True)
             eos = eos * mask
@@ -83,6 +83,8 @@ class Tester(object):
             input_ = torch.cat((x, y, eos), dim=2)
             all_outputs.append(input_)
         generated_strokes = torch.cat((strokes[:, 0:1], *all_outputs), dim=1).data
+        print(strokes)
+        print(generated_strokes)
         plotstrokes(strokes.data)
         plotstrokes(generated_strokes)
 
