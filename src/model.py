@@ -23,6 +23,13 @@ class HandwritingGenerator(Module):
                                 hidden_size=hidden_size,
                                 batch_first=True)
 
+        # Third LSTM layer, takes as input the concatenation of the output of the first LSTM layer,
+        # the output of the second LSTM layer
+        # and the output of the Window layer
+        self.lstm3_layer = LSTM(input_size=2 * hidden_size + alphabet_size,
+                                hidden_size=hidden_size,
+                                batch_first=True)
+
         # Mixture Density Network Layer
         self.output_layer = MDN(input_size=hidden_size,
                                 num_mixtures=num_mixture_components)
@@ -32,6 +39,7 @@ class HandwritingGenerator(Module):
         self.prev_kappa = None
         self.hidden1 = None
         self.hidden2 = None
+        self.hidden3 = None
 
         # Initiliaze parameters
         self.reset_parameters()
@@ -41,14 +49,15 @@ class HandwritingGenerator(Module):
             self.prev_window = Variable(torch.zeros((strokes.size(0), strokes.size(1), self.alphabet_size)))
         # First LSTM Layer
         input_ = torch.cat((strokes, self.prev_window), dim=2)
-        hidden1 = self.hidden1
-        output, self.hidden1 = self.lstm1_layer(input_, hidden1)
+        output1, self.hidden1 = self.lstm1_layer(input_, self.hidden1)
         # Gaussian Window Layer
-        self.prev_window, self.prev_kappa = self.window_layer(output, onehot, self.prev_kappa)
+        self.prev_window, self.prev_kappa = self.window_layer(output1, onehot, self.prev_kappa)
         # Second LSTM Layer
-        output, self.hidden2 = self.lstm2_layer(torch.cat((strokes, output, self.prev_window), dim=2), self.hidden2)
+        output2, self.hidden2 = self.lstm2_layer(torch.cat((strokes, output1, self.prev_window), dim=2), self.hidden2)
+        # Third LSTM Layer
+        output3, self.hidden3 = self.lstm3_layer(torch.cat((output1, output2, self.prev_window), dim=2), self.hidden3)
         # MDN Layer
-        eos, pi, mu1, mu2, sigma1, sigma2, rho = self.output_layer(output, bias)
+        eos, pi, mu1, mu2, sigma1, sigma2, rho = self.output_layer(output3, bias)
         return eos, pi, mu1, mu2, sigma1, sigma2, rho
 
     def sample_bivariate_gaussian(self, pi, mu1, mu2, sigma1, sigma2, rho):
@@ -63,16 +72,7 @@ class HandwritingGenerator(Module):
         self.prev_kappa = None
         self.hidden1 = None
         self.hidden2 = None
-
-    def detach_state(self):
-        if self.prev_window is not None:
-            self.prev_window = self.prev_window.detach()
-        if self.prev_kappa is not None:
-            self.prev_kappa = self.prev_kappa.detach()
-        if self.hidden1 is not None:
-            self.hidden1 = [state.detach() for state in self.hidden1]
-        if self.hidden2 is not None:
-            self.hidden2 = [state.detach() for state in self.hidden2]
+        self.hidden3 = None
 
     def reset_parameters(self):
         for parameter in self.parameters():
