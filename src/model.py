@@ -63,9 +63,15 @@ class HandwritingGenerator(Module):
     def sample_bivariate_gaussian(self, pi, mu1, mu2, sigma1, sigma2, rho):
         # Pick the distribution with the highest proportion from the MDN
         _, idx = torch.max(pi, dim=2)
-        X = torch.normal(means=torch.cat((mu1[:, :, idx], mu2[:, :, idx]), dim=2),
-                         std=torch.cat((sigma1[:, :, idx], sigma2[:, :, idx]), dim=2)).squeeze(3)
-        return X[:, :, 0:1], X[:, :, 1:2]
+        idx = int(idx)
+        Z = torch.normal(means=0.0,
+                         std=torch.ones_like(sigma1[:, :, 0:2]))
+        Z1 = Z[:, :, 0:1]
+        Z2 = Z[:, :, 1:2]
+        # Sampling equations taken from http://www.statisticalengineering.com/bivariate_normal.htm
+        X = mu1[:, :, idx] + sigma1[:, :, idx] * Z1
+        Y = mu2[:, :, idx] + sigma2[:, :, idx] * (Z1 * rho[:, :, idx] + Z2 * (1 - rho[:, :, idx]).sqrt())
+        return X, Y
 
     def reset_state(self):
         self.prev_window = None

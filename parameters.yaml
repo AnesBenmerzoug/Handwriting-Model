@@ -7,7 +7,7 @@ num_window_components: 10
 num_mixture_components: 20
 batch_size: 32
 savedModelDir: './trained_models/'
-testModelPath: './trained_models/'
+testModelPath: './trained_models/Trained_Model_268_20.05.2018_18.07'
 
 # Dataset Parameters
 DatasetDir: './data/'
@@ -16,11 +16,12 @@ min_num_points: 300
 
 # Testing Parameters
 probability_bias: 0.5
+eos_threshold: 0.3
 
 # Training Parameters
 trainModel: True
 useGPU: False
-resumeTraining: False
+resumeTraining: True
 num_epochs: 50
 max_norm: 100
 # Optimizer Parameters

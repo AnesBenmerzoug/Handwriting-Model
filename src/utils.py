@@ -12,13 +12,17 @@ def plotlosses(losses, title='', xlabel='', ylabel=''):
     plt.show()
 
 
-def plotstrokes(strokes):
+def plotstrokes(strokes, other_strokes=None):
+    if other_strokes is not None:
+        plt.figure(figsize=(40, 2))
+        plt.subplot(211)
+    else:
+        plt.figure(figsize=(20, 2))
     # Cumulative sum, because they are represented as relative displacement
     x = torch.cumsum(strokes[:, :, 0], dim=1).numpy()
     y = torch.cumsum(strokes[:, :, 1], dim=1).numpy()
     eos = strokes[:, :, 2]
     eos_indices = (eos.nonzero()[:, 1]).numpy()
-    plt.figure(figsize=(20, 2))
     idx = 0
     while idx != eos_indices.shape[0]:
         start_index = eos_indices[idx]+1
@@ -29,6 +33,22 @@ def plotstrokes(strokes):
         plt.plot(x[0, start_index:end_index], y[0, start_index:end_index], 'b-', linewidth=2.0)
         idx += 1
     plt.gca().invert_yaxis()
+    if other_strokes is not None:
+        plt.subplot(212)
+        x = torch.cumsum(other_strokes[:, :, 0], dim=1).numpy()
+        y = torch.cumsum(other_strokes[:, :, 1], dim=1).numpy()
+        eos = other_strokes[:, :, 2]
+        eos_indices = (eos.nonzero()[:, 1]).numpy()
+        idx = 0
+        while idx != eos_indices.shape[0]:
+            start_index = eos_indices[idx] + 1
+            try:
+                end_index = eos_indices[idx + 1]
+            except IndexError:
+                end_index = x.shape[1]
+            plt.plot(x[0, start_index:end_index], y[0, start_index:end_index], 'b-', linewidth=2.0)
+            idx += 1
+        plt.gca().invert_yaxis()
     plt.show()
     pass
 

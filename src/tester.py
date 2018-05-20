@@ -75,18 +75,15 @@ class Tester(object):
             eos, pi, mu1, mu2, sigma1, sigma2, rho = output
             x, y = self.model.sample_bivariate_gaussian(pi, mu1, mu2, sigma1, sigma2, rho)
             eos_data = eos.data
-            print(eos_data)
-            threshold = eos_data.new([0.1])
+            #threshold = eos_data.new([self.params.eos_threshold])
+            threshold = eos_data.new([0.12])
             mask = Variable(eos_data.ge(threshold).float(), volatile=True)
             eos = eos * mask
             eos = eos.ceil()
             input_ = torch.cat((x, y, eos), dim=2)
             all_outputs.append(input_)
         generated_strokes = torch.cat((strokes[:, 0:1], *all_outputs), dim=1).data
-        print(strokes)
-        print(generated_strokes)
-        plotstrokes(strokes.data)
-        plotstrokes(generated_strokes)
+        plotstrokes(strokes.data, generated_strokes)
 
     def load_model(self, useGPU=False):
         package = torch.load(self.params.testModelPath, map_location=lambda storage, loc: storage)

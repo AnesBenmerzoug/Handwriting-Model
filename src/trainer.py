@@ -26,15 +26,6 @@ class Trainer(object):
 
         self.alphabet = self.trainset.alphabet
 
-        # Batchifier
-        self.batchifier = Batchifier(self.params)
-
-        # Initialize loaders
-        self.trainloader = DataLoader(self.trainset, batch_size=self.params.batch_size,
-                                      shuffle=False, num_workers=self.params.num_workers,
-                                      sampler=RandomSampler(self.trainset),
-                                      collate_fn=self.batchifier.collate_fn)
-
         # Checking for GPU
         self.useGPU = self.params.useGPU and torch.cuda.is_available()
 
@@ -48,6 +39,15 @@ class Trainer(object):
         else:
             print("Resuming Training")
             self.load_model(self.useGPU)
+
+        # Batchifier
+        self.batchifier = Batchifier(self.params)
+
+        # Initialize loaders
+        self.trainloader = DataLoader(self.trainset, batch_size=self.params.batch_size,
+                                      shuffle=False, num_workers=self.params.num_workers,
+                                      sampler=RandomSampler(self.trainset),
+                                      collate_fn=self.batchifier.collate_fn)
 
         print(self.model)
 
