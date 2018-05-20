@@ -15,7 +15,7 @@ class HandwritingLoss(Module):
         x_data, y_data, eos_data = stroke.chunk(3, dim=2)
         N = self.bivariateGaussian(x_data, y_data, mu1, mu2, sigma1, sigma2, rho)
         term1 = -((pi * N).sum(dim=2, keepdim=True) + 1e-20).log()
-        term2 = -(0.7 * eos * eos_data + 0.3 * (1.0 - eos) * (1.0 - eos_data) + 1e-20).log()
+        term2 = -(0.8 * eos * eos_data + 0.2 * (1.0 - eos) * (1.0 - eos_data) + 1e-20).log()
         loss = term1 + term2
         reduction_factor = reduce((lambda x, y: x * y), loss.size())
         return loss.sum() / reduction_factor
