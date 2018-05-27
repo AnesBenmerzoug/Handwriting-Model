@@ -5,11 +5,11 @@ from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import RandomSampler
 from torch.nn.utils import clip_grad_norm
-from src.dataset import IAMDataset
-from src.optimizer import SVRG
-from src.model import HandwritingGenerator
-from src.batchifier import Batchifier
-from src.loss import HandwritingLoss
+from .dataset import IAMDataset
+from .optimizer import SVRG
+from .model import HandwritingGenerator
+from .loss import HandwritingLoss
+from .utils import plotstrokes
 from collections import namedtuple
 from copy import deepcopy
 import time
@@ -22,7 +22,7 @@ class Trainer(object):
         self.params = parameters
 
         # Initialize datasets
-        self.trainset = IAMDataset(self.params, setType='training')
+        self.trainset = IAMDataset(self.params)
 
         self.alphabet = self.trainset.alphabet
 
@@ -36,18 +36,16 @@ class Trainer(object):
                                               hidden_size=self.params.hidden_size,
                                               num_window_components=self.params.num_window_components,
                                               num_mixture_components=self.params.num_mixture_components)
+            # Optimizer setup
+            self.optimizer = self.optimizer_select()
         else:
             print("Resuming Training")
             self.load_model(self.useGPU)
 
-        # Batchifier
-        self.batchifier = Batchifier(self.params)
-
         # Initialize loaders
         self.trainloader = DataLoader(self.trainset, batch_size=self.params.batch_size,
                                       shuffle=False, num_workers=self.params.num_workers,
-                                      sampler=RandomSampler(self.trainset),
-                                      collate_fn=self.batchifier.collate_fn)
+                                      sampler=RandomSampler(self.trainset))
 
         print(self.model)
 
@@ -77,8 +75,10 @@ class Trainer(object):
         else:
             print("Using CPU")
 
-        # Setup optimizer
-        self.optimizer = self.optimizer_select()
+        # Scheduler
+        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer,
+                                                   step_size=self.params.step_size,
+                                                   gamma=self.params.decay_coeff)
 
         # Criterion
         self.criterion = HandwritingLoss(self.params)
@@ -93,7 +93,7 @@ class Trainer(object):
             onehot, strokes = Variable(onehot), Variable(strokes)
             # Forward Step
             self.model.reset_state()
-            output = self.model(strokes[:, :-1, :], onehot)
+            output, _ = self.model(strokes[:, :-1, :], onehot)
             # Loss Computation
             snapshot_loss = self.criterion(output, strokes[:, 1:, :])
             # Zero the optimizer gradient
@@ -112,6 +112,9 @@ class Trainer(object):
         for epoch in range(self.params.num_epochs):
             print("Epoch {}".format(epoch + 1))
 
+            # Update learning rate
+            self.scheduler.step(epoch)
+
             if self.params.optimizer == 'SVRG':
                 # Update SVRG snapshot
                 self.optimizer.update_snapshot(dataloader=self.trainloader, closure=self.snapshot_closure())
@@ -129,6 +132,8 @@ class Trainer(object):
             if min_Loss is None or min_Loss >= avg_losses[epoch]:
                 min_Loss = avg_losses[epoch]
                 best_model = self.model.state_dict()
+            if (epoch + 1) % 5 == 0:
+                self.save_model(best_model, min_Loss * 100)
         # Saving trained model
         self.save_model(best_model, min_Loss * 100)
         return avg_losses
@@ -141,18 +146,19 @@ class Trainer(object):
                 print("Average Loss so far: {}".format(losses / batch_index))
             # Split data tuple
             onehot, strokes = data
+            #plotstrokes(strokes)
             # Wrap it in Variables
             if self.useGPU is True:
                 onehot, strokes = onehot.cuda(), strokes.cuda()
             onehot, strokes = Variable(onehot), Variable(strokes)
             # Main Model Forward Step
             self.model.reset_state()
-            output = self.model(strokes[:, :-1, :], onehot)
+            output, _ = self.model(strokes[:, :-1, :], onehot)
             # Loss Computation
             loss = self.criterion(output, strokes[:, 1:, :])
             if self.params.optimizer == 'SVRG':
                 # Snapshot Model Forward Backward
-                snapshot_output = self.snapshot_model(strokes[:, :-1, :], onehot)
+                snapshot_output, _ = self.snapshot_model(strokes[:, :-1, :], onehot)
                 # Snapshot Model Loss Computation
                 snapshot_loss = self.criterion(snapshot_output, strokes[:, 1:, :])
             inf = float("inf")
@@ -192,6 +198,9 @@ class Trainer(object):
         elif self.params.optimizer == 'SGD':
             return optim.SGD(self.model.parameters(), lr=self.params.learning_rate,
                              momentum=self.params.momentum, nesterov=self.params.nesterov)
+        elif self.params.optimizer == 'RMSprop':
+            return optim.RMSprop(self.model.parameters(), lr=self.params.learning_rate,
+                                 momentum=self.params.momentum)
         elif self.params.optimizer == 'SVRG':
             return SVRG(self.model.parameters(), self.snapshot_model.parameters(),
                         lr=self.params.learning_rate)
@@ -210,7 +219,7 @@ class Trainer(object):
         self.optimizer = self.optimizer_select()
         parameters = package['params']
         self.params = namedtuple('Parameters', (parameters.keys()))(*parameters.values())
-        self.optimizer.load_state_dict(package['optim_dict'])
+        #self.optimizer.load_state_dict(package['optim_dict'])
 
     def serialize(self):
         model_is_cuda = next(self.model.parameters()).is_cuda

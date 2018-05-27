@@ -12,15 +12,16 @@ class GaussianWindow(Module):
 
     def forward(self, input_, onehot, prev_kappa=None):
         abk_hats = self.parameter_layer(input_)
-        abk = torch.exp(abk_hats).unsqueeze(dim=2)
-        alpha, beta, kappa = abk.chunk(3, dim=3)
+        abk = torch.exp(abk_hats).unsqueeze(3)
+        alpha, beta, kappa = abk.chunk(3, dim=2)
         if prev_kappa is not None:
             kappa = kappa + prev_kappa
-        u = torch.autograd.Variable(torch.arange(0, onehot.size(1))).view(1, 1, -1, 1)
-        u = u.expand(kappa.size(0), kappa.size(1), -1, kappa.size(3))
-        phi = torch.sum(alpha * torch.exp(-beta * ((kappa - u) ** 2)), dim=3)
+        else:
+            kappa = kappa.cumsum(dim=2)
+        u = torch.autograd.Variable(torch.arange(1, onehot.size(1) + 1))
+        phi = torch.sum(alpha * torch.exp(-beta * ((kappa - u) ** 2)), dim=2)
         window = torch.matmul(phi, onehot)
-        return window, kappa
+        return window, kappa, phi
 
     def __repr__(self):
         s = '{name}(input_size={input_size}, num_components={num_components})'
@@ -35,21 +36,18 @@ class MDN(Module):
         self.parameter_layer = Linear(in_features=input_size, out_features=1 + 6*num_mixtures)
 
     def forward(self, input_, bias=None):
-        parameters_hats = self.parameter_layer(input_)
-        eos_hat = parameters_hats[:, :, 0:1]
-        pi_hat, mu1_hat, mu2_hat, sigma1_hat, sigma2_hat, rho_hat = torch.chunk(parameters_hats[:, :, 1:], 6, dim=2)
+        mixture_parameters = self.parameter_layer(input_)
+        eos_hat = mixture_parameters[:, :, 0:1]
+        pi_hat, mu1_hat, mu2_hat, sigma1_hat, sigma2_hat, rho_hat = torch.chunk(mixture_parameters[:, :, 1:], 6, dim=2)
         eos = F.sigmoid(-eos_hat)
         mu1 = mu1_hat
         mu2 = mu2_hat
         rho = F.tanh(rho_hat)
         if bias is None:
-            pi = F.softmax(pi_hat, dim=2)
-            sigma1 = torch.exp(sigma1_hat)
-            sigma2 = torch.exp(sigma2_hat)
-        else:
-            pi = F.softmax(pi_hat * (1 + bias), dim=2)
-            sigma1 = torch.exp(sigma1_hat - bias)
-            sigma2 = torch.exp(sigma2_hat - bias)
+            bias = torch.zeros_like(rho)
+        pi = F.softmax(pi_hat * (1 + bias), dim=2)
+        sigma1 = torch.exp(sigma1_hat - bias)
+        sigma2 = torch.exp(sigma2_hat - bias)
         return eos, pi, mu1, mu2, sigma1, sigma2, rho
 
     def __repr__(self):

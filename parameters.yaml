@@ -2,12 +2,12 @@
 
 # Model Parameters
 input_size: 3
-hidden_size: 100
+hidden_size: 200
 num_window_components: 10
 num_mixture_components: 20
 batch_size: 32
 savedModelDir: './trained_models/'
-testModelPath: './trained_models/Trained_Model_268_20.05.2018_18.07'
+testModelPath: './trained_models/Trained_Model_215_27.05.2018_05.52'
 
 # Dataset Parameters
 DatasetDir: './data/'
@@ -15,18 +15,21 @@ num_workers: 0
 min_num_points: 300
 
 # Testing Parameters
-probability_bias: 0.5
-eos_threshold: 0.3
+probability_bias: 1.0
 
 # Training Parameters
 trainModel: True
 useGPU: False
-resumeTraining: True
+resumeTraining: False
 num_epochs: 50
 max_norm: 100
 # Optimizer Parameters
 optimizer: 'Adam'
-learning_rate: 1.0e-3
+learning_rate: 5.0e-3
 momentum: 0.9
 nesterov: True
+# SVRG Parameters
 update_frequency: 2
+# Scheduler Parameters
+decay_coeff: 0.1
+step_size: 15

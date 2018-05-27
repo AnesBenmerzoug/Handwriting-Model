@@ -3,6 +3,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
+
+
+
 def plotlosses(losses, title='', xlabel='', ylabel=''):
     epochs = np.arange(losses.size) + 1
     plt.plot(epochs, losses)
@@ -51,4 +54,19 @@ def plotstrokes(strokes, other_strokes=None):
         plt.gca().invert_yaxis()
     plt.show()
     pass
+
+
+def plotwindow(phis, windows):
+    plt.figure(figsize=(16, 4))
+    plt.subplot(121)
+    plt.title('Phis', fontsize=20)
+    plt.xlabel("ascii #", fontsize=15)
+    plt.ylabel("time steps", fontsize=15)
+    plt.imshow(phis, interpolation='nearest', aspect='auto')
+    plt.subplot(122)
+    plt.title('Soft attention window', fontsize=20)
+    plt.xlabel("one-hot vector", fontsize=15)
+    plt.ylabel("time steps", fontsize=15)
+    plt.imshow(windows, interpolation='nearest', aspect='auto')
+    plt.show()
 

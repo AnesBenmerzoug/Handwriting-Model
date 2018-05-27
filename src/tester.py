@@ -1,12 +1,11 @@
 import torch
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
-from src.dataset import IAMDataset
-from src.model import HandwritingGenerator
-from src.loss import HandwritingLoss
-from src.batchifier import Batchifier
-from src.utils import plotstrokes
-from collections import namedtuple
+from .dataset import IAMDataset
+from .model import HandwritingGenerator
+from .loss import HandwritingLoss
+from .utils import plotstrokes, plotwindow
+import numpy as np
 import random
 
 
@@ -15,15 +14,11 @@ class Tester(object):
         self.params = parameters
 
         # Initialize datasets
-        self.testset = IAMDataset(self.params, setType='testing')
-
-        # Batchifier
-        self.batchifier = Batchifier(self.params)
+        self.testset = IAMDataset(self.params)
 
         # Initialize loaders
-        self.testloader = DataLoader(self.testset, batch_size=self.params.batch_size,
-                                     shuffle=False, num_workers=self.params.num_workers,
-                                     collate_fn=self.batchifier.collate_fn)
+        self.testloader = DataLoader(self.testset, batch_size=1,
+                                     shuffle=True, num_workers=self.params.num_workers)
 
         # Initialize model
         self.load_model()
@@ -69,24 +64,35 @@ class Tester(object):
         # Main Model Forward Step
         self.model.reset_state()
         all_outputs = []
+        phis = []
+        windows = []
         input_ = strokes[:, 0:1]
-        for idx in range(strokes.size(1) - 1):
-            output = self.model(input_, onehot, self.params.probability_bias)
+        finish = False
+        counter = 0
+        while not finish:
+            output, (window, phi) = self.model(input_, onehot, self.params.probability_bias)
+            windows.append(window.data[0].numpy())
+            phis.append(phi.data[0].numpy())
+            finish = phi[0, 0, -1].data.ge(torch.max(phi.data[0, 0, :]))[0]
             eos, pi, mu1, mu2, sigma1, sigma2, rho = output
             x, y = self.model.sample_bivariate_gaussian(pi, mu1, mu2, sigma1, sigma2, rho)
             eos_data = eos.data
-            #threshold = eos_data.new([self.params.eos_threshold])
-            threshold = eos_data.new([0.12])
+            threshold = eos_data.new([random.random()])
             mask = Variable(eos_data.ge(threshold).float(), volatile=True)
-            eos = eos * mask
-            eos = eos.ceil()
+            eos = (eos * mask).ceil()
             input_ = torch.cat((x, y, eos), dim=2)
             all_outputs.append(input_)
+            counter += 1
+        phis = np.vstack(phis)
+        windows = np.vstack(windows)
         generated_strokes = torch.cat((strokes[:, 0:1], *all_outputs), dim=1).data
         plotstrokes(strokes.data, generated_strokes)
+        print(strokes.data)
+        print(generated_strokes)
+        plotwindow(phis, windows)
 
     def load_model(self, useGPU=False):
         package = torch.load(self.params.testModelPath, map_location=lambda storage, loc: storage)
         self.model = HandwritingGenerator.load_model(package, useGPU)
-        parameters = package['params']
-        self.params = namedtuple('Parameters', (parameters.keys()))(*parameters.values())
+        #parameters = package['params']
+        #self.params = namedtuple('Parameters', (parameters.keys()))(*parameters.values())
