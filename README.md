@@ -6,7 +6,6 @@ The dataset used to train this neural network is the [IAM On-Line Handwriting Da
 
 * [data/lineStrokes-all.tar.gz](http://www.fki.inf.unibe.ch/DBs/iamOnDB/data/lineStrokes-all.tar.gz)
 * [ascii-all.tar.gz](http://www.fki.inf.unibe.ch/DBs/iamOnDB/data/ascii-all.tar.gz)
-* [task1.tar.gz](http://www.fki.inf.unibe.ch/DBs/iamOnDB/task1.tar.gz)
 
 And the directory structure has to be the following:
 ```
@@ -25,21 +24,14 @@ And the directory structure has to be the following:
         |   |   |   └── a01-000x.txt
         |   |   └── ...
         |   └── ...
-        ├── lineStrokes    # xml files that contain the strokes
-        |   ├── a01
-        |   |   ├── a01-000
-        |   |   |   ├── a01-000u-01.xml
-        |   |   |   └── a01-000u-02.xml
-        |   |   |   └── ...
-        |   |   └── ...
-        |   └── ...
-        └── task1         # text files that contain a list of the samples to correspond to each set
-            ├── trainset.txt
-            ├── testset_v.txt
-            ├── testset_t.txt
-            ├── testset_f.txt
+        └── lineStrokes    # xml files that contain the strokes
+            ├── a01
+            |   ├── a01-000
+            |   |   ├── a01-000u-01.xml
+            |   |   └── a01-000u-02.xml
+            |   |   └── ...
+            |   └── ...
             └── ...
-    
     
 ```
 
