@@ -1,16 +1,16 @@
 import torch
-from torch.autograd.variable import Variable
 from torch.nn.modules import Module, LSTM
-from src.modules import GaussianWindow, MDN
+from .modules import GaussianWindow, MDN
+import numpy as np
 import random
 
 
 class HandwritingGenerator(Module):
     def __init__(self, alphabet_size, hidden_size, num_window_components, num_mixture_components):
         super(HandwritingGenerator, self).__init__()
-        self.alphabet_size = alphabet_size
+        self.alphabet_size = alphabet_size + 1
         # First LSTM layer, takes as input a tuple (x, y, eol)
-        self.lstm1_layer = LSTM(input_size=3 + alphabet_size,
+        self.lstm1_layer = LSTM(input_size=3,
                                 hidden_size=hidden_size,
                                 batch_first=True)
         # Gaussian Window layer
@@ -19,14 +19,14 @@ class HandwritingGenerator(Module):
         # Second LSTM layer, takes as input the concatenation of the input,
         # the output of the first LSTM layer
         # and the output of the Window layer
-        self.lstm2_layer = LSTM(input_size=3 + hidden_size + alphabet_size,
+        self.lstm2_layer = LSTM(input_size=3 + hidden_size + alphabet_size + 1,
                                 hidden_size=hidden_size,
                                 batch_first=True)
 
         # Third LSTM layer, takes as input the concatenation of the output of the first LSTM layer,
         # the output of the second LSTM layer
         # and the output of the Window layer
-        self.lstm3_layer = LSTM(input_size=2 * hidden_size + alphabet_size,
+        self.lstm3_layer = LSTM(input_size=hidden_size,
                                 hidden_size=hidden_size,
                                 batch_first=True)
 
@@ -35,7 +35,6 @@ class HandwritingGenerator(Module):
                                 num_mixtures=num_mixture_components)
 
         # Hidden State Variables
-        self.prev_window = None
         self.prev_kappa = None
         self.hidden1 = None
         self.hidden2 = None
@@ -45,36 +44,36 @@ class HandwritingGenerator(Module):
         self.reset_parameters()
 
     def forward(self, strokes, onehot, bias=None):
-        if self.prev_window is None:
-            self.prev_window = Variable(torch.zeros((strokes.size(0), strokes.size(1), self.alphabet_size)))
         # First LSTM Layer
-        input_ = torch.cat((strokes, self.prev_window), dim=2)
+        input_ = strokes
         output1, self.hidden1 = self.lstm1_layer(input_, self.hidden1)
         # Gaussian Window Layer
-        self.prev_window, self.prev_kappa = self.window_layer(output1, onehot, self.prev_kappa)
+        window, self.prev_kappa, phi = self.window_layer(output1, onehot, self.prev_kappa)
         # Second LSTM Layer
-        output2, self.hidden2 = self.lstm2_layer(torch.cat((strokes, output1, self.prev_window), dim=2), self.hidden2)
+        output2, self.hidden2 = self.lstm2_layer(torch.cat((strokes, output1, window), dim=2), self.hidden2)
         # Third LSTM Layer
-        output3, self.hidden3 = self.lstm3_layer(torch.cat((output1, output2, self.prev_window), dim=2), self.hidden3)
+        output3, self.hidden3 = self.lstm3_layer(output2, self.hidden3)
         # MDN Layer
         eos, pi, mu1, mu2, sigma1, sigma2, rho = self.output_layer(output3, bias)
-        return eos, pi, mu1, mu2, sigma1, sigma2, rho
+        return (eos, pi, mu1, mu2, sigma1, sigma2, rho), (window, phi)
 
     def sample_bivariate_gaussian(self, pi, mu1, mu2, sigma1, sigma2, rho):
-        # Pick the distribution with the highest proportion from the MDN
-        _, idx = torch.max(pi, dim=2)
-        idx = int(idx)
-        Z = torch.normal(means=0.0,
-                         std=torch.ones_like(sigma1[:, :, 0:2]))
-        Z1 = Z[:, :, 0:1]
-        Z2 = Z[:, :, 1:2]
-        # Sampling equations taken from http://www.statisticalengineering.com/bivariate_normal.htm
-        X = mu1[:, :, idx] + sigma1[:, :, idx] * Z1
-        Y = mu2[:, :, idx] + sigma2[:, :, idx] * (Z1 * rho[:, :, idx] + Z2 * (1 - rho[:, :, idx]).sqrt())
+        # Pick distribution from the MDN
+        p = pi.data[0, 0, :].numpy()
+        idx = np.random.choice(p.shape[0], p=p)
+        m1 = mu1.data[0, 0, idx]
+        m2 = mu2.data[0, 0, idx]
+        s1 = sigma1.data[0, 0, idx]
+        s2 = sigma2.data[0, 0, idx]
+        r = rho.data[0, 0, idx]
+        mean = [m1, m2]
+        covariance = [[s1 ** 2, r * s1 * s2], [r * s1 * s2, s2 ** 2]]
+        Z = torch.autograd.Variable(sigma1.data.new(np.random.multivariate_normal(mean, covariance, 1))).unsqueeze(0)
+        X = Z[:, :, 0:1]
+        Y = Z[:, :, 1:2]
         return X, Y
 
     def reset_state(self):
-        self.prev_window = None
         self.prev_kappa = None
         self.hidden1 = None
         self.hidden2 = None
@@ -85,7 +84,8 @@ class HandwritingGenerator(Module):
             if len(parameter.size()) == 2:
                 torch.nn.init.xavier_uniform(parameter, gain=1.0)
             else:
-                torch.nn.init.uniform(parameter, -1.0, 1.0)
+                stdv = 1.0 / parameter.size(0)
+                torch.nn.init.uniform(parameter, -stdv, stdv)
 
     def num_parameters(self):
         num = 0

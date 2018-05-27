@@ -14,8 +14,9 @@ class HandwritingLoss(Module):
         eos, pi, mu1, mu2, sigma1, sigma2, rho = mdn_parameters
         x_data, y_data, eos_data = stroke.chunk(3, dim=2)
         N = self.bivariateGaussian(x_data, y_data, mu1, mu2, sigma1, sigma2, rho)
-        term1 = -((pi * N).sum(dim=2, keepdim=True) + 1e-20).log()
-        term2 = -(0.8 * eos * eos_data + 0.2 * (1.0 - eos) * (1.0 - eos_data) + 1e-20).log()
+        epsilon = 1e-20
+        term1 = -((pi * N).sum(dim=2, keepdim=True).clamp(min=epsilon)).log()
+        term2 = -(eos * eos_data + (1.0 - eos) * (1.0 - eos_data)).clamp(min=epsilon).log()
         loss = term1 + term2
         reduction_factor = reduce((lambda x, y: x * y), loss.size())
         return loss.sum() / reduction_factor
@@ -24,6 +25,7 @@ class HandwritingLoss(Module):
         Z = ((x - mu1) / sigma1) ** 2.0 \
             + ((y - mu2) / sigma2) ** 2.0 \
             - 2.0 * rho * (x - mu1) * (y - mu2) / (sigma1 * sigma2)
-        N = torch.exp(- 0.5 * Z / (1.0 - rho ** 2.0)) \
+        N = torch.exp(- 0.5 * Z / (1.0 - (rho ** 2.0))) \
             / (2.0 * np.pi * sigma1 * sigma2 * torch.sqrt(1.0 - rho ** 2.0))
         return N
+

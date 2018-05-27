@@ -1,5 +1,6 @@
 import torch
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 import numpy as np
 
 
@@ -51,4 +52,19 @@ def plotstrokes(strokes, other_strokes=None):
         plt.gca().invert_yaxis()
     plt.show()
     pass
+
+
+def plotwindow(phis, windows):
+    plt.figure(figsize=(16, 4))
+    plt.subplot(121)
+    plt.title('Phis', fontsize=20)
+    plt.xlabel("Ascii #", fontsize=15)
+    plt.ylabel("Time steps", fontsize=15)
+    plt.imshow(phis, interpolation='nearest', aspect='auto', cmap=cm.jet)
+    plt.subplot(122)
+    plt.title('Soft attention window', fontsize=20)
+    plt.xlabel("One-hot vector", fontsize=15)
+    plt.ylabel("Time steps", fontsize=15)
+    plt.imshow(windows, interpolation='nearest', aspect='auto', cmap=cm.jet)
+    plt.show()
 
