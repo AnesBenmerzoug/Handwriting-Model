@@ -2,37 +2,43 @@ import torch
 from torch.nn.modules import Module, LSTM
 from .modules import GaussianWindow, MDN
 import numpy as np
-import random
 
 
 class HandwritingGenerator(Module):
-    def __init__(self, alphabet_size, hidden_size, num_window_components, num_mixture_components):
+    def __init__(
+        self, alphabet_size, hidden_size, num_window_components, num_mixture_components
+    ):
         super(HandwritingGenerator, self).__init__()
-        self.alphabet_size = alphabet_size + 1
+        self.alphabet_size = alphabet_size
+        self.hidden_size = hidden_size
+        self.num_window_components = num_window_components
+        self.num_mixture_components = num_mixture_components
         # First LSTM layer, takes as input a tuple (x, y, eol)
-        self.lstm1_layer = LSTM(input_size=3,
-                                hidden_size=hidden_size,
-                                batch_first=True)
+        self.lstm1_layer = LSTM(input_size=3, hidden_size=hidden_size, batch_first=True)
         # Gaussian Window layer
-        self.window_layer = GaussianWindow(input_size=hidden_size,
-                                           num_components=num_window_components)
+        self.window_layer = GaussianWindow(
+            input_size=hidden_size, num_components=num_window_components
+        )
         # Second LSTM layer, takes as input the concatenation of the input,
         # the output of the first LSTM layer
         # and the output of the Window layer
-        self.lstm2_layer = LSTM(input_size=3 + hidden_size + alphabet_size + 1,
-                                hidden_size=hidden_size,
-                                batch_first=True)
+        self.lstm2_layer = LSTM(
+            input_size=3 + hidden_size + alphabet_size + 1,
+            hidden_size=hidden_size,
+            batch_first=True,
+        )
 
         # Third LSTM layer, takes as input the concatenation of the output of the first LSTM layer,
         # the output of the second LSTM layer
         # and the output of the Window layer
-        self.lstm3_layer = LSTM(input_size=hidden_size,
-                                hidden_size=hidden_size,
-                                batch_first=True)
+        self.lstm3_layer = LSTM(
+            input_size=hidden_size, hidden_size=hidden_size, batch_first=True
+        )
 
         # Mixture Density Network Layer
-        self.output_layer = MDN(input_size=hidden_size,
-                                num_mixtures=num_mixture_components)
+        self.output_layer = MDN(
+            input_size=hidden_size, num_mixtures=num_mixture_components
+        )
 
         # Hidden State Variables
         self.prev_kappa = None
@@ -46,18 +52,24 @@ class HandwritingGenerator(Module):
     def forward(self, strokes, onehot, bias=None):
         # First LSTM Layer
         input_ = strokes
+        self.lstm1_layer.flatten_parameters()
         output1, self.hidden1 = self.lstm1_layer(input_, self.hidden1)
         # Gaussian Window Layer
-        window, self.prev_kappa, phi = self.window_layer(output1, onehot, self.prev_kappa)
+        window, self.prev_kappa, phi = self.window_layer(
+            output1, onehot, self.prev_kappa
+        )
         # Second LSTM Layer
-        output2, self.hidden2 = self.lstm2_layer(torch.cat((strokes, output1, window), dim=2), self.hidden2)
+        output2, self.hidden2 = self.lstm2_layer(
+            torch.cat((strokes, output1, window), dim=2), self.hidden2
+        )
         # Third LSTM Layer
         output3, self.hidden3 = self.lstm3_layer(output2, self.hidden3)
         # MDN Layer
         eos, pi, mu1, mu2, sigma1, sigma2, rho = self.output_layer(output3, bias)
         return (eos, pi, mu1, mu2, sigma1, sigma2, rho), (window, phi)
 
-    def sample_bivariate_gaussian(self, pi, mu1, mu2, sigma1, sigma2, rho):
+    @staticmethod
+    def sample_bivariate_gaussian(pi, mu1, mu2, sigma1, sigma2, rho):
         # Pick distribution from the MDN
         p = pi.data[0, 0, :].numpy()
         idx = np.random.choice(p.shape[0], p=p)
@@ -68,7 +80,9 @@ class HandwritingGenerator(Module):
         r = rho.data[0, 0, idx]
         mean = [m1, m2]
         covariance = [[s1 ** 2, r * s1 * s2], [r * s1 * s2, s2 ** 2]]
-        Z = torch.autograd.Variable(sigma1.data.new(np.random.multivariate_normal(mean, covariance, 1))).unsqueeze(0)
+        Z = torch.autograd.Variable(
+            sigma1.data.new(np.random.multivariate_normal(mean, covariance, 1))
+        ).unsqueeze(0)
         X = Z[:, :, 0:1]
         Y = Z[:, :, 1:2]
         return X, Y
@@ -94,13 +108,16 @@ class HandwritingGenerator(Module):
         return num
 
     @classmethod
-    def load_model(cls, package, useGPU=False):
-        params = package['params']
-        model = cls(alphabet_size=package['alphabet_size'],
-                    hidden_size=params['hidden_size'],
-                    num_window_components=params['num_window_components'],
-                    num_mixture_components=params['num_mixture_components'])
-        model.load_state_dict(package['state_dict'])
-        if useGPU is True:
-            model = model.cuda()
+    def load_model(cls, parameters: dict, state_dict: dict):
+        model = cls(**parameters)
+        model.load_state_dict(state_dict)
+        return model
+
+    def __deepcopy__(self, *args, **kwargs):
+        model = HandwritingGenerator(
+            self.alphabet_size,
+            self.hidden_size,
+            self.num_window_components,
+            self.num_mixture_components,
+        )
         return model

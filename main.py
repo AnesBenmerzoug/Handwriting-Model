@@ -1,38 +1,69 @@
-from __future__ import print_function
-from collections import namedtuple
 import faulthandler
+from pathlib import Path
 import time
-import yaml
 
-from src import *
+import click
+
+from src import Trainer, Tester, plotlosses
 
 
-if __name__ == "__main__":
+class Parameters:
+    # Model Parameters
+    input_size = 3
+    hidden_size = 200
+    num_window_components = 10
+    num_mixture_components = 20
+    probability_bias = 1.0
+    model_dir = Path("./trained_models/")
+    # Dataset Parameters
+    dataset_dir = Path("./data/")
+    min_num_points = 300
+    num_workers = 2
+    # Training Parameters
+    num_epochs = 1000
+    batch_size = 256
+    max_norm = 400
+    # Optimizer Parameters
+    optimizer = "Adam"
+    learning_rate = 1.0e-4
+    momentum = 0.9
+    nesterov = True
+
+
+@click.command()
+@click.option("--train/--no-train", is_flag=True, default=True)
+@click.option("--gpu/--no-gpu", is_flag=True, default=True)
+def main(train: bool, gpu: bool):
     print("Starting time: {}".format(time.asctime()))
 
     # To have a more verbose output in case of an exception
     faulthandler.enable()
 
-    with open('parameters.yaml', 'r') as params_file:
-        parameters = yaml.safe_load(params_file)
-        parameters = namedtuple('Parameters', (parameters.keys()))(*parameters.values())
+    Parameters.train_model = train
+    Parameters.use_gpu = gpu
 
-    if parameters.trainModel is True:
+    if Parameters.train_model is True:
         # Instantiating the trainer
-        trainer = Trainer(parameters)
+        trainer = Trainer(Parameters)
         # Training the model
         avg_losses = trainer.train_model()
         # Plot losses
-        plotlosses(avg_losses, title='Average Loss per Epoch', xlabel='Epoch', ylabel='Average Loss')
+        plotlosses(
+            avg_losses,
+            title="Average Loss per Epoch",
+            xlabel="Epoch",
+            ylabel="Average Loss",
+        )
 
-    else:
-        # Instantiating the tester
-        tester = Tester(parameters)
-        # Testing the model
-        tester.test_random_sample()
-        # Testing the model accuracy
-        #test_losses = tester.test_model()
+    # Instantiating the tester
+    tester = Tester(Parameters)
+    # Testing the model
+    tester.test_random_sample()
+    # Testing the model accuracy
+    # test_losses = tester.test_model()
 
     print("Finishing time: {}".format(time.asctime()))
 
 
+if __name__ == "__main__":
+    main()

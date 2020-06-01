@@ -4,7 +4,7 @@ import matplotlib.cm as cm
 import numpy as np
 
 
-def plotlosses(losses, title='', xlabel='', ylabel=''):
+def plotlosses(losses, title="", xlabel="", ylabel=""):
     epochs = np.arange(losses.size) + 1
     plt.plot(epochs, losses)
     plt.xlabel(xlabel)
@@ -26,12 +26,17 @@ def plotstrokes(strokes, other_strokes=None):
     eos_indices = (eos.nonzero()[:, 1]).numpy()
     idx = 0
     while idx != eos_indices.shape[0]:
-        start_index = eos_indices[idx]+1
+        start_index = eos_indices[idx] + 1
         try:
-            end_index = eos_indices[idx+1]
+            end_index = eos_indices[idx + 1]
         except IndexError:
             end_index = x.shape[1]
-        plt.plot(x[0, start_index:end_index], y[0, start_index:end_index], 'b-', linewidth=2.0)
+        plt.plot(
+            x[0, start_index:end_index],
+            y[0, start_index:end_index],
+            "b-",
+            linewidth=2.0,
+        )
         idx += 1
     plt.gca().invert_yaxis()
     if other_strokes is not None:
@@ -47,7 +52,12 @@ def plotstrokes(strokes, other_strokes=None):
                 end_index = eos_indices[idx + 1]
             except IndexError:
                 end_index = x.shape[1]
-            plt.plot(x[0, start_index:end_index], y[0, start_index:end_index], 'b-', linewidth=2.0)
+            plt.plot(
+                x[0, start_index:end_index],
+                y[0, start_index:end_index],
+                "b-",
+                linewidth=2.0,
+            )
             idx += 1
         plt.gca().invert_yaxis()
     plt.show()
@@ -57,14 +67,13 @@ def plotstrokes(strokes, other_strokes=None):
 def plotwindow(phis, windows):
     plt.figure(figsize=(16, 4))
     plt.subplot(121)
-    plt.title('Phis', fontsize=20)
+    plt.title("Phis", fontsize=20)
     plt.xlabel("Ascii #", fontsize=15)
     plt.ylabel("Time steps", fontsize=15)
-    plt.imshow(phis, interpolation='nearest', aspect='auto', cmap=cm.jet)
+    plt.imshow(phis, interpolation="nearest", aspect="auto", cmap=cm.jet)
     plt.subplot(122)
-    plt.title('Soft attention window', fontsize=20)
+    plt.title("Soft attention window", fontsize=20)
     plt.xlabel("One-hot vector", fontsize=15)
     plt.ylabel("Time steps", fontsize=15)
-    plt.imshow(windows, interpolation='nearest', aspect='auto', cmap=cm.jet)
+    plt.imshow(windows, interpolation="nearest", aspect="auto", cmap=cm.jet)
     plt.show()
-
