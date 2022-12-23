@@ -27,28 +27,18 @@ class IAMDataset(Dataset):
             parameters (namedTuple): an object containing the session parameters
         """
         self.params = parameters
-        self.ascii_data_file = DATA_DIR / "ascii-all.tar.gz"
-        self.line_strokes_data_file = DATA_DIR / "lineStrokes-all.tar.gz"
 
         self.ascii_data_dir = DATA_DIR / "ascii"
         self.line_strokes_data_dir = DATA_DIR / "lineStrokes"
 
         self.data_filename = DATA_DIR / "strokes_data.pickled"
 
-        if not (self.ascii_data_file.exists() and self.line_strokes_data_file.exists()):
+        if not (self.ascii_data_dir.exists() and self.line_strokes_file.exists()):
             raise FileNotFoundError(
                 f"Could not find data files. "
                 "Please make sure to follow the instructions in the README "
                 "to download and set up the dataset."
             )
-
-        if not self.ascii_data_dir.exists():
-            with tarfile.open(self.ascii_file, "r") as tar:
-                tar.extractall(path=DATA_DIR)
-
-        if not self.line_strokes_data_dir.exists():
-            with tarfile.open(self.line_strokes_file, "r") as tar:
-                tar.extractall(path=DATA_DIR)
 
         # space + uppercase and lowercase letters, their indices will be shifted when transforming them
         # to one hot in order to have index 0 for unknown characters
