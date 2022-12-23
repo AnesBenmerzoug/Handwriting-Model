@@ -11,7 +11,7 @@ from torch.utils.data import Dataset
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
-from src.constants import DATA_DIR
+from handwriting_generator.constants import DATA_DIR
 
 __all__ = ["IAMDataset"]
 

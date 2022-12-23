@@ -1,6 +1,6 @@
 import torch
 from torch.nn.modules import Module, LSTM
-from src.modules import GaussianWindow, MDN
+from handwriting_generator.modules import GaussianWindow, MDN
 import numpy as np
 
 

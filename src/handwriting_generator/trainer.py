@@ -10,10 +10,10 @@ from torch.nn.utils import clip_grad_norm_
 from tqdm.auto import trange
 from tqdm.contrib.logging import logging_redirect_tqdm
 
-from src.dataset import IAMDataset
-from src.model import HandwritingGenerator
-from src.loss import HandwritingLoss
-from src.constants import OUTPUT_DIR
+from handwriting_generator.dataset import IAMDataset
+from handwriting_generator.model import HandwritingGenerator
+from handwriting_generator.loss import HandwritingLoss
+from handwriting_generator.constants import OUTPUT_DIR
 
 
 __all__ = ["Trainer"]
