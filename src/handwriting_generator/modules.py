@@ -1,5 +1,5 @@
 import torch
-from torch.nn.modules import Module, Linear
+from torch.nn.modules import Linear, Module
 
 
 class GaussianWindow(Module):

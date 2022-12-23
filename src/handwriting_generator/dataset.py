@@ -3,10 +3,10 @@ import os
 import pickle
 import string
 import tarfile
+import xml.etree.ElementTree as ET
 
 import numpy as np
 import torch
-import xml.etree.ElementTree as ET
 from torch.utils.data import Dataset
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 class IAMDataset(Dataset):
-    """ IAM On-Line Handwriting Dataset Class """
+    """IAM On-Line Handwriting Dataset Class"""
 
     def __init__(self, parameters):
         """

@@ -1,19 +1,18 @@
 import logging
+import random
 from pathlib import Path
 
-import torch
 import numpy as np
-import random
+import torch
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
-
-from handwriting_generator.dataset import IAMDataset
-from handwriting_generator.model import HandwritingGenerator
-from handwriting_generator.loss import HandwritingLoss
-from handwriting_generator.utils import plotstrokes, plotwindow
 from handwriting_generator.constants import OUTPUT_DIR
+from handwriting_generator.dataset import IAMDataset
+from handwriting_generator.loss import HandwritingLoss
+from handwriting_generator.model import HandwritingGenerator
+from handwriting_generator.utils import plotstrokes, plotwindow
 
 __all__ = ["Tester"]
 

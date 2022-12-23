@@ -1,7 +1,7 @@
-import torch
-import matplotlib.pyplot as plt
 import matplotlib.cm as cm
+import matplotlib.pyplot as plt
 import numpy as np
+import torch
 
 
 def plotlosses(losses, title="", xlabel="", ylabel=""):

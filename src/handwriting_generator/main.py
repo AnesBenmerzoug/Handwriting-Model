@@ -4,7 +4,7 @@ import time
 
 import click
 
-from handwriting_generator import Trainer, Tester, plotlosses
+from handwriting_generator import Tester, Trainer, plotlosses
 
 logging.basicConfig(
     level=logging.INFO,

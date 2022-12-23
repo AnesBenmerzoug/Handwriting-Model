@@ -1,7 +1,8 @@
-import torch
-from torch.nn.modules import Module, LSTM
-from handwriting_generator.modules import GaussianWindow, MDN
 import numpy as np
+import torch
+from torch.nn.modules import LSTM, Module
+
+from handwriting_generator.modules import MDN, GaussianWindow
 
 
 class HandwritingGenerator(Module):
@@ -79,7 +80,7 @@ class HandwritingGenerator(Module):
         s2 = sigma2.data[0, 0, idx]
         r = rho.data[0, 0, idx]
         mean = [m1, m2]
-        covariance = [[s1 ** 2, r * s1 * s2], [r * s1 * s2, s2 ** 2]]
+        covariance = [[s1**2, r * s1 * s2], [r * s1 * s2, s2**2]]
         Z = torch.autograd.Variable(
             sigma1.data.new(np.random.multivariate_normal(mean, covariance, 1))
         ).unsqueeze(0)

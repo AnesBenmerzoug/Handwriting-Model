@@ -1,20 +1,19 @@
 import logging
 from copy import deepcopy
 
-import torch
 import numpy as np
+import torch
 import torch.optim as optim
+from torch.nn.utils import clip_grad_norm_
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import RandomSampler
-from torch.nn.utils import clip_grad_norm_
 from tqdm.auto import trange
 from tqdm.contrib.logging import logging_redirect_tqdm
 
-from handwriting_generator.dataset import IAMDataset
-from handwriting_generator.model import HandwritingGenerator
-from handwriting_generator.loss import HandwritingLoss
 from handwriting_generator.constants import OUTPUT_DIR
-
+from handwriting_generator.dataset import IAMDataset
+from handwriting_generator.loss import HandwritingLoss
+from handwriting_generator.model import HandwritingGenerator
 
 __all__ = ["Trainer"]
 
@@ -149,7 +148,8 @@ class Trainer:
         model = deepcopy(self.model)
         model.load_state_dict(model_parameters)
         torch.save(
-            self.serialize(model), path,
+            self.serialize(model),
+            path,
         )
 
     def serialize(self, model):
