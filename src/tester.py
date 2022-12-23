@@ -1,17 +1,26 @@
+import logging
 from pathlib import Path
-from typing import Union
 
 import torch
-from torch.utils.data import DataLoader
-from .dataset import IAMDataset
-from .model import HandwritingGenerator
-from .loss import HandwritingLoss
-from .utils import plotstrokes, plotwindow
 import numpy as np
 import random
+from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 
-class Tester(object):
+from src.dataset import IAMDataset
+from src.model import HandwritingGenerator
+from src.loss import HandwritingLoss
+from src.utils import plotstrokes, plotwindow
+from src.constants import OUTPUT_DIR
+
+__all__ = ["Tester"]
+
+logger = logging.getLogger(__name__)
+
+
+class Tester:
     def __init__(self, parameters):
         self.params = parameters
 
@@ -27,7 +36,7 @@ class Tester(object):
         )
 
         # Initialize model
-        path = self.params.model_dir / "trained_model.pt"
+        path = OUTPUT_DIR / "trained_model.pt"
         self.model = self.load_model(path)
 
         # Criterion
@@ -37,29 +46,30 @@ class Tester(object):
         self.model.eval()
         losses = 0.0
         inf = float("inf")
-        for data in self.testloader:
-            # Split data tuple
-            onehot, strokes = data
-            # Main Model Forward Step
-            self.model.reset_state()
-            loss = None
-            for idx in range(strokes.size(1) - 1):
-                output = self.model(strokes[:, idx : idx + 1, :], onehot)
-                # Loss Computation
-                if loss is None:
-                    loss = self.criterion(
-                        output, strokes[:, idx : idx + 1, :]
-                    ) / strokes.size(1)
+        with logging_redirect_tqdm():
+            for data in tqdm(self.testloader):
+                # Split data tuple
+                onehot, strokes = data
+                # Main Model Forward Step
+                self.model.reset_state()
+                loss = None
+                for idx in range(strokes.size(1) - 1):
+                    output = self.model(strokes[:, idx : idx + 1, :], onehot)
+                    # Loss Computation
+                    if loss is None:
+                        loss = self.criterion(
+                            output, strokes[:, idx : idx + 1, :]
+                        ) / strokes.size(1)
+                    else:
+                        loss = loss + self.criterion(
+                            output, strokes[:, idx : idx + 1, :]
+                        ) / strokes.size(1)
+                if loss.data.item() == inf or loss.data.item() == -inf:
+                    logger.info("Warning, received inf loss. Skipping it")
+                elif loss.data.item() != loss.data.item():
+                    logger.info("Warning, received NaN loss.")
                 else:
-                    loss = loss + self.criterion(
-                        output, strokes[:, idx : idx + 1, :]
-                    ) / strokes.size(1)
-            if loss.data.item() == inf or loss.data.item() == -inf:
-                print("Warning, received inf loss. Skipping it")
-            elif loss.data.item() != loss.data.item():
-                print("Warning, received NaN loss.")
-            else:
-                losses = losses + loss.data.item()
+                    losses = losses + loss.data.item()
         return losses / len(self.testloader)
 
     def test_random_sample(self):
@@ -69,7 +79,7 @@ class Tester(object):
         # Split data tuple
         onehot, strokes = data
         onehot, strokes = onehot.unsqueeze(0), strokes.unsqueeze(0)
-        print(self.testset.ascii[index])
+        logger.info(self.testset.ascii[index])
         # Main Model Forward Step
         self.model.reset_state()
         all_outputs = []
@@ -103,7 +113,7 @@ class Tester(object):
         plotwindow(phis, windows)
 
     @staticmethod
-    def load_model(path: Union[Path, str]):
+    def load_model(path: Path | str) -> HandwritingGenerator:
         package = torch.load(path, map_location=lambda storage, loc: storage)
         parameters = package["parameters"]
         state_dict = package["state_dict"]

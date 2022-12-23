@@ -1,14 +1,24 @@
+import logging
+from copy import deepcopy
+
 import torch
 import numpy as np
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import RandomSampler
-from torch.nn.utils import clip_grad_norm
-from .dataset import IAMDataset
-from .model import HandwritingGenerator
-from .loss import HandwritingLoss
-from copy import deepcopy
-from .utils import plotstrokes
+from torch.nn.utils import clip_grad_norm_
+from tqdm.auto import trange
+from tqdm.contrib.logging import logging_redirect_tqdm
+
+from src.dataset import IAMDataset
+from src.model import HandwritingGenerator
+from src.loss import HandwritingLoss
+from src.constants import OUTPUT_DIR
+
+
+__all__ = ["Trainer"]
+
+logger = logging.getLogger(__name__)
 
 
 class Trainer:
@@ -44,9 +54,9 @@ class Trainer:
         )
         self.model.to(self.device)
 
-        print(self.model)
+        logger.info(self.model)
 
-        print("Number of parameters = {}".format(self.model.num_parameters()))
+        logger.info("Number of parameters = {}".format(self.model.num_parameters()))
 
         # Optimizer setup
         self.optimizer = self.optimizer_select()
@@ -58,30 +68,31 @@ class Trainer:
         min_loss = None
         best_model = self.model.state_dict()
         avg_losses = np.zeros(self.params.num_epochs)
-        self.params.model_dir.mkdir(parents=True, exist_ok=True)
-        path = self.params.model_dir / "trained_model.pt"
-        for epoch in range(self.params.num_epochs):
-            try:
-                print("Epoch {}".format(epoch + 1))
+        path = OUTPUT_DIR / "trained_model.pt"
 
-                # Set mode to training
-                self.model.train()
+        with logging_redirect_tqdm():
+            for epoch in trange(self.params.num_epochs):
+                try:
+                    logger.info("Epoch {}".format(epoch + 1))
 
-                # Go through the training set
-                avg_losses[epoch] = self.train_epoch()
+                    # Set mode to training
+                    self.model.train()
 
-                print("Average loss = {:.3f}".format(avg_losses[epoch]))
+                    # Go through the training set
+                    avg_losses[epoch] = self.train_epoch()
 
-                if min_loss is None or min_loss >= avg_losses[epoch]:
-                    min_loss = avg_losses[epoch]
-                    best_model = self.model.state_dict()
+                    logger.info("Average loss = {:.3f}".format(avg_losses[epoch]))
 
-                if (epoch + 1) % 5 == 0:
-                    self.save_model(best_model, path)
+                    if min_loss is None or min_loss >= avg_losses[epoch]:
+                        min_loss = avg_losses[epoch]
+                        best_model = self.model.state_dict()
 
-            except KeyboardInterrupt:
-                print("Training was interrupted")
-                break
+                    if (epoch + 1) % 5 == 0:
+                        self.save_model(best_model, path)
+
+                except KeyboardInterrupt:
+                    logger.info("Training was interrupted")
+                    break
         # Saving trained model
         self.save_model(best_model, path)
         return avg_losses
@@ -91,8 +102,8 @@ class Trainer:
         inf = float("inf")
         for batch_index, (data) in enumerate(self.trainloader, 1):
             if batch_index % 20 == 0:
-                print("Step {}".format(batch_index))
-                print("Average Loss so far: {}".format(losses / batch_index))
+                logger.info("Step {}".format(batch_index))
+                logger.info("Average Loss so far: {}".format(losses / batch_index))
             # Split data tuple
             onehot, strokes = data
             # Plot strokes
@@ -114,9 +125,9 @@ class Trainer:
                     / strokes.size(1)
                 )
             if loss.data.item() == inf or loss.data.item() == -inf:
-                print("Warning, received inf loss. Skipping it")
+                logger.info("Warning, received inf loss. Skipping it")
             elif loss.data.item() != loss.data.item():
-                print("Warning, received NaN loss.")
+                logger.info("Warning, received NaN loss.")
             else:
                 losses = losses + loss.data.item()
             # Zero the optimizer gradient
@@ -124,7 +135,7 @@ class Trainer:
             # Backward step
             loss.backward()
             # Clip gradients
-            clip_grad_norm(self.model.parameters(), self.params.max_norm)
+            clip_grad_norm_(self.model.parameters(), self.params.max_norm)
             # Weight Update
             self.optimizer.step()
             if self.use_gpu is True:

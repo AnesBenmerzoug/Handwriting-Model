@@ -142,9 +142,3 @@ cython_debug/
 
 # PyCharm
 .idea
-
-# Data
-data
-
-# Models
-trained_models

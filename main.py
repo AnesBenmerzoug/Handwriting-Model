@@ -1,10 +1,17 @@
 import faulthandler
-from pathlib import Path
+import logging
 import time
 
 import click
 
 from src import Trainer, Tester, plotlosses
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
+    force=True,
+)
+logger = logging.getLogger(__name__)
 
 
 class Parameters:
@@ -14,13 +21,11 @@ class Parameters:
     num_window_components = 10
     num_mixture_components = 20
     probability_bias = 1.0
-    model_dir = Path("./trained_models/")
     # Dataset Parameters
-    dataset_dir = Path("./data/")
     min_num_points = 300
     num_workers = 2
     # Training Parameters
-    num_epochs = 1000
+    num_epochs = 2
     batch_size = 256
     max_norm = 400
     # Optimizer Parameters
@@ -34,7 +39,7 @@ class Parameters:
 @click.option("--train/--no-train", is_flag=True, default=True)
 @click.option("--gpu/--no-gpu", is_flag=True, default=True)
 def main(train: bool, gpu: bool):
-    print("Starting time: {}".format(time.asctime()))
+    logger.info("Starting time: {}".format(time.asctime()))
 
     # To have a more verbose output in case of an exception
     faulthandler.enable()
@@ -62,7 +67,7 @@ def main(train: bool, gpu: bool):
     # Testing the model accuracy
     # test_losses = tester.test_model()
 
-    print("Finishing time: {}".format(time.asctime()))
+    logger.info("Finishing time: {}".format(time.asctime()))
 
 
 if __name__ == "__main__":

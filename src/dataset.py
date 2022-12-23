@@ -1,11 +1,21 @@
-from __future__ import print_function, division
-import torch
-from torch.utils.data import Dataset
-import xml.etree.ElementTree as ET
-import numpy as np
+import logging
+import os
 import pickle
 import string
-import os
+import tarfile
+
+import numpy as np
+import torch
+import xml.etree.ElementTree as ET
+from torch.utils.data import Dataset
+from tqdm.auto import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
+
+from src.constants import DATA_DIR
+
+__all__ = ["IAMDataset"]
+
+logger = logging.getLogger(__name__)
 
 
 class IAMDataset(Dataset):
@@ -17,9 +27,29 @@ class IAMDataset(Dataset):
             parameters (namedTuple): an object containing the session parameters
         """
         self.params = parameters
-        self.data_filename = os.path.join(
-            self.params.dataset_dir, "strokes_data.pickled"
-        )
+        self.ascii_data_file = DATA_DIR / "ascii-all.tar.gz"
+        self.line_strokes_data_file = DATA_DIR / "lineStrokes-all.tar.gz"
+
+        self.ascii_data_dir = DATA_DIR / "ascii"
+        self.line_strokes_data_dir = DATA_DIR / "lineStrokes"
+
+        self.data_filename = DATA_DIR / "strokes_data.pickled"
+
+        if not (self.ascii_data_file.exists() and self.line_strokes_data_file.exists()):
+            raise FileNotFoundError(
+                f"Could not find data files. "
+                "Please make sure to follow the instructions in the README "
+                "to download and set up the dataset."
+            )
+
+        if not self.ascii_data_dir.exists():
+            with tarfile.open(self.ascii_file, "r") as tar:
+                tar.extractall(path=DATA_DIR)
+
+        if not self.line_strokes_data_dir.exists():
+            with tarfile.open(self.line_strokes_file, "r") as tar:
+                tar.extractall(path=DATA_DIR)
+
         # space + uppercase and lowercase letters, their indices will be shifted when transforming them
         # to one hot in order to have index 0 for unknown characters
         self.alphabet = "".join(
@@ -34,10 +64,10 @@ class IAMDataset(Dataset):
         self.ascii_onehot = []
 
         if not (os.path.exists(self.data_filename)):
-            print("Creating file {}".format(self.data_filename))
+            logger.info("Creating file {}".format(self.data_filename))
             self.prepocess_data()
         else:
-            print("File {} exists already".format(self.data_filename))
+            logger.info("File {} exists already".format(self.data_filename))
 
         self.load_data()
 
@@ -45,7 +75,7 @@ class IAMDataset(Dataset):
         def create_data_path_list():
             data_path_list = []
 
-            ascii_dir = os.path.join(self.params.dataset_dir, "ascii")
+            ascii_dir = self.ascii_data_dir
 
             for root, dirs, files in os.walk(ascii_dir):
                 if not files:
@@ -117,19 +147,20 @@ class IAMDataset(Dataset):
         text_array = []
         strokes_array = []
 
-        for ascii_file, strokes_files in data_path_list:
-            # Get the text from the files
-            text_list = getAscii(ascii_file)
+        with logging_redirect_tqdm():
+            for ascii_file, strokes_files in tqdm(data_path_list):
+                # Get the text from the files
+                text_list = getAscii(ascii_file)
 
-            # Get the strokes from the files
-            strokes_list = getStrokes(strokes_files)
+                # Get the strokes from the files
+                strokes_list = getStrokes(strokes_files)
 
-            for text, strokes in zip(text_list, strokes_list):
-                if len(text) > 10:
-                    text_array.append(text)
-                    strokes_array.append(convert_stroke_to_array(strokes))
-                else:
-                    print("\nText was too short: {}".format(text))
+                for text, strokes in zip(text_list, strokes_list):
+                    if len(text) > 10:
+                        text_array.append(text)
+                        strokes_array.append(convert_stroke_to_array(strokes))
+                    else:
+                        logger.info("Text was too short: {}".format(text))
 
         assert len(text_array) == len(strokes_array)
         with open(self.data_filename, "wb+") as f:

@@ -1,6 +1,6 @@
 import torch
 from torch.nn.modules import Module, LSTM
-from .modules import GaussianWindow, MDN
+from src.modules import GaussianWindow, MDN
 import numpy as np
 
 
@@ -96,10 +96,10 @@ class HandwritingGenerator(Module):
     def reset_parameters(self):
         for parameter in self.parameters():
             if len(parameter.size()) == 2:
-                torch.nn.init.xavier_uniform(parameter, gain=1.0)
+                torch.nn.init.xavier_uniform_(parameter, gain=1.0)
             else:
                 stdv = 1.0 / parameter.size(0)
-                torch.nn.init.uniform(parameter, -stdv, stdv)
+                torch.nn.init.uniform_(parameter, -stdv, stdv)
 
     def num_parameters(self):
         num = 0
