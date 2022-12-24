@@ -2,9 +2,12 @@ import logging
 import tarfile
 from pathlib import Path
 
+from rich.logging import RichHandler
+
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
+    format="%(message)s",
+    handlers=[RichHandler(rich_tracebacks=True)],
     force=True,
 )
 logger = logging.getLogger(__name__)

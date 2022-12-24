@@ -7,8 +7,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from matplotlib.axes import Axes
+from rich.progress import track
 from torch.nn.utils.rnn import pad_sequence
-from tqdm.auto import tqdm
 
 __all__ = [
     "plotlosses",
@@ -30,7 +30,7 @@ def load_line_strokes(
 ) -> dict[str, list[list[tuple[int, int]]]]:
     result = dict()
     if show_progress:
-        iterator = tqdm(line_strokes_dir.rglob("*.xml"))
+        iterator = track(line_strokes_dir.rglob("*.xml"))
     else:
         iterator = line_strokes_dir.rglob("*.xml")
     for file in iterator:
@@ -57,7 +57,7 @@ def load_transcriptions(
 ) -> dict[str, str]:
     result = dict()
     if show_progress:
-        iterator = tqdm(ascii_dir.rglob("*.txt"))
+        iterator = track(ascii_dir.rglob("*.txt"))
     else:
         iterator = ascii_dir.rglob("*.txt")
     for file in iterator:
@@ -91,7 +91,7 @@ def filter_line_strokes_and_transcriptions(
     )
 
     if show_progress:
-        iterator = tqdm(filename_differences)
+        iterator = track(filename_differences)
     else:
         iterator = filename_differences
 

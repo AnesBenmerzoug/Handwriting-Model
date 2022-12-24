@@ -6,9 +6,8 @@ import string
 import numpy as np
 import pytorch_lightning as pl
 import torch
+from rich.progress import track
 from torch.utils.data import DataLoader, Dataset, random_split
-from tqdm.auto import tqdm
-from tqdm.contrib.logging import logging_redirect_tqdm
 
 from handwriting_generator.constants import (
     LINE_STROKES_DIR,
@@ -101,39 +100,38 @@ class IAMDataModule(pl.LightningDataModule):
         transcriptions_list = []
         transcriptions_onehot_list = []
 
-        with logging_redirect_tqdm():
-            for key in tqdm(line_strokes.keys()):
-                stroke_set = line_strokes[key]
-                transcription = transcriptions[key]
-                if len(transcription) <= 10:
-                    logger.info(f"Transcription is too short: '{transcription}'")
-                    continue
-                elif len(transcription) >= 50:
-                    logger.info(f"Transcription is too long: '{transcription}'")
-                    continue
+        for key in track(line_strokes.keys()):
+            stroke_set = line_strokes[key]
+            transcription = transcriptions[key]
+            if len(transcription) <= 10:
+                logger.info(f"Transcription is too short: '{transcription}'")
+                continue
+            elif len(transcription) >= 50:
+                logger.info(f"Transcription is too long: '{transcription}'")
+                continue
 
-                strokes_array = convert_stroke_set_to_array(stroke_set)
-                strokes_array = np.concatenate(
-                    [
-                        strokes_array[:, :2] / np.std(strokes_array[:, :2], axis=0),
-                        strokes_array[:, [2]],
-                    ],
-                    axis=1,
-                )
-                strokes_array_list.append(strokes_array)
+            strokes_array = convert_stroke_set_to_array(stroke_set)
+            strokes_array = np.concatenate(
+                [
+                    strokes_array[:, :2] / np.std(strokes_array[:, :2], axis=0),
+                    strokes_array[:, [2]],
+                ],
+                axis=1,
+            )
+            strokes_array_list.append(strokes_array)
 
-                transcription = "".join(
-                    c if c in self.alphabet else self.alphabet[0]
-                    for c in transcription.lower()
-                )
-                onehot = np.zeros(
-                    shape=(len(transcription), len(self.alphabet) + 1), dtype=np.uint8
-                )
-                indices = [self.alphabet.find(c) for c in transcription]
-                onehot[np.arange(len(transcription)), indices] = 1
+            transcription = "".join(
+                c if c in self.alphabet else self.alphabet[0]
+                for c in transcription.lower()
+            )
+            onehot = np.zeros(
+                shape=(len(transcription), len(self.alphabet) + 1), dtype=np.uint8
+            )
+            indices = [self.alphabet.find(c) for c in transcription]
+            onehot[np.arange(len(transcription)), indices] = 1
 
-                transcriptions_list.append(transcription)
-                transcriptions_onehot_list.append(onehot)
+            transcriptions_list.append(transcription)
+            transcriptions_onehot_list.append(onehot)
 
         with open(PREPROCESSED_DATA_FILE, "wb+") as f:
             pickle.dump(

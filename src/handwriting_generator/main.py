@@ -8,8 +8,11 @@ from pytorch_lightning import loggers as pl_loggers
 from pytorch_lightning.callbacks import (
     DeviceStatsMonitor,
     LearningRateMonitor,
-    TQDMProgressBar,
+    ModelCheckpoint,
+    RichModelSummary,
+    RichProgressBar,
 )
+from rich.logging import RichHandler
 
 from handwriting_generator.config import Parameters
 from handwriting_generator.constants import OUTPUT_DIR
@@ -18,7 +21,8 @@ from handwriting_generator.model import HandwritingGenerator
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
+    format="%(message)s",
+    handlers=[RichHandler(rich_tracebacks=True, tracebacks_suppress=[click])],
     force=True,
 )
 logger = logging.getLogger(__name__)
@@ -57,9 +61,11 @@ def main(n_epochs: int, train: bool, gpu: bool):
         devices=1 if torch.cuda.is_available() else None,
         gradient_clip_val=0.5,
         callbacks=[
-            TQDMProgressBar(refresh_rate=20),
             LearningRateMonitor("epoch"),
             DeviceStatsMonitor(),
+            ModelCheckpoint(save_top_k=2, monitor="val_loss"),
+            RichModelSummary(),
+            RichProgressBar(),
         ],
         logger=tensorboard,
         profiler="simple",
