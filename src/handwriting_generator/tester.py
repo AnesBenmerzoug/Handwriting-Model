@@ -51,21 +51,24 @@ class Tester:
         with logging_redirect_tqdm():
             for data in tqdm(self.test_loader):
                 # Split data tuple
-                onehot, strokes = data
+                onehot, strokes, onehot_lengths, strokes_lens = data
                 # Main Model Forward Step
-                self.model.reset_state()
-                loss = None
-                for idx in range(strokes.size(1) - 1):
-                    output = self.model(strokes[:, idx : idx + 1, :], onehot)
-                    # Loss Computation
-                    if loss is None:
-                        loss = self.criterion(
-                            output, strokes[:, idx : idx + 1, :]
-                        ) / strokes.size(1)
-                    else:
-                        loss = loss + self.criterion(
-                            output, strokes[:, idx : idx + 1, :]
-                        ) / strokes.size(1)
+                with torch.no_grad():
+                    (eos, pi, mu1, mu2, sigma1, sigma2, rho), _ = self.model(
+                        strokes, onehot
+                    )
+
+                    loss = self.criterion(
+                        eos[:, :-1],
+                        pi[:, :-1],
+                        mu1[:, :-1],
+                        mu2[:, :-1],
+                        sigma1[:, :-1],
+                        sigma2[:, :-1],
+                        rho[:, :-1],
+                        torch.roll(strokes, -1, dims=1)[:, :-1],
+                    ) / strokes.size(1)
+
                 if loss.data.item() == inf or loss.data.item() == -inf:
                     logger.info("Warning, received inf loss. Skipping it")
                 elif loss.data.item() != loss.data.item():
@@ -83,14 +86,14 @@ class Tester:
         onehot, strokes = onehot.unsqueeze(0).float(), strokes.unsqueeze(0).float()
         logger.info(self.testset.transcriptions[index])
         # Main Model Forward Step
-        self.model.reset_state()
         all_outputs = []
         phis = []
         windows = []
         input_ = strokes[:, 0:1]
         finish = False
         counter = 0
-        while not finish:
+        while not finish and counter <= 1000:
+            counter += 1
             output, (window, phi) = self.model(
                 input_, onehot, self.params.probability_bias
             )
@@ -107,13 +110,15 @@ class Tester:
             eos = (eos * mask).ceil()
             input_ = torch.cat((x, y, eos), dim=2)
             all_outputs.append(input_)
-            counter += 1
         phis = np.vstack(phis)
         windows = np.vstack(windows)
-        _, axes = plt.subplots(2, 1)
         generated_strokes = torch.cat((strokes[:, 0:1], *all_outputs), dim=1).data
+        # Plot Strokes
+        fig, axes = plt.subplots(2, 1)
         plot_strokes(strokes.numpy(), ax=axes[0])
         plot_strokes(generated_strokes.numpy(), ax=axes[1])
+        fig.show()
+        # Plot Gaussian Window
         plotwindow(phis, windows)
 
     @staticmethod

@@ -45,30 +45,21 @@ class HandwritingGenerator(Module):
             input_size=hidden_size, n_mixtures=n_mixture_components
         )
 
-        # Hidden State Variables
-        self.prev_kappa = None
-        self.hidden1 = None
-        self.hidden2 = None
-        self.hidden3 = None
-
         # Initialize parameters
         self.reset_parameters()
 
     def forward(self, strokes, onehot, bias=None):
         # First LSTM Layer
         input_ = strokes
-        self.lstm1_layer.flatten_parameters()
-        output1, self.hidden1 = self.lstm1_layer(input_, self.hidden1)
+        output1, _ = self.lstm1_layer(input_)
         # Gaussian Window Layer
-        window, self.prev_kappa, phi = self.window_layer(
-            output1, onehot, self.prev_kappa
-        )
+        window, phi = self.window_layer(output1, onehot)
         # Second LSTM Layer
-        output2, self.hidden2 = self.lstm2_layer(
-            torch.cat((strokes, output1, window), dim=2), self.hidden2
+        output2, _ = self.lstm2_layer(
+            torch.cat((strokes, output1, window), dim=2),
         )
         # Third LSTM Layer
-        output3, self.hidden3 = self.lstm3_layer(output2, self.hidden3)
+        output3, _ = self.lstm3_layer(output2)
         # MixtureDensityNetwork Layer
         eos, pi, mu1, mu2, sigma1, sigma2, rho = self.output_layer(output3, bias)
         return (eos, pi, mu1, mu2, sigma1, sigma2, rho), (window, phi)
@@ -91,12 +82,6 @@ class HandwritingGenerator(Module):
         X = Z[:, :, 0:1]
         Y = Z[:, :, 1:2]
         return X, Y
-
-    def reset_state(self):
-        self.prev_kappa = None
-        self.hidden1 = None
-        self.hidden2 = None
-        self.hidden3 = None
 
     def reset_parameters(self):
         for parameter in self.parameters():

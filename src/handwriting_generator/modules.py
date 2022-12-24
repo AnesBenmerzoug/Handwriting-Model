@@ -35,17 +35,17 @@ class GaussianWindow(Module):
         self,
         input_: torch.Tensor,
         onehot: torch.Tensor,
-        prev_kappa: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         abk_hats = self.parameter_layer(input_)
-        abk = torch.exp(abk_hats).unsqueeze(3)
-        alpha, beta, kappa = abk.chunk(3, dim=2)
-        if prev_kappa is not None:
-            kappa = kappa + prev_kappa
+        abk = torch.exp(abk_hats).unsqueeze(len(abk_hats.shape))
+        alpha, beta, kappa_hat = abk.chunk(3, dim=2)
+        kappa_hat_shifted = torch.roll(kappa_hat, -1, dims=1)
+        kappa_hat_shifted[:, 0] = 0
+        kappa = kappa_hat + kappa_hat_shifted
         u = torch.arange(0, onehot.size(1)).to(input_.device)
         phi = torch.sum(alpha * torch.exp(-beta * ((kappa - u) ** 2)), dim=2)
         window = torch.matmul(phi, onehot)
-        return window, kappa, phi
+        return window, phi
 
     def __repr__(self):
         s = "{name}(input_size={input_size}, n_components={n_components})"
@@ -93,15 +93,7 @@ class MixtureDensityNetwork(Module):
 
     def forward(
         self, input_: torch.Tensor, bias: torch.Tensor | None = None
-    ) -> tuple[
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-    ]:
+    ) -> tuple[torch.Tensor, ...]:
         mixture_parameters = self.parameter_layer(input_)
         eos_hat = mixture_parameters[:, :, 0:1]
         pi_hat, mu1_hat, mu2_hat, sigma1_hat, sigma2_hat, rho_hat = torch.chunk(

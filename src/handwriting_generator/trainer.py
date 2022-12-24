@@ -113,23 +113,25 @@ class Trainer:
             # Move inputs to correct device
             onehot, strokes = onehot.to(self.device), strokes.to(self.device)
             # Main Model Forward Step
-            self.model.reset_state()
-            loss = None
-            for idx in range(strokes.size(1) - 1):
-                output, _ = self.model(strokes[:, idx : idx + 1, :], onehot)
-                # Loss Computation
-                loss = (
-                    self.criterion(output, strokes[:, idx + 1 : idx + 2, :])
-                    / strokes.size(1)
-                    if loss is None
-                    else loss
-                    + self.criterion(output, strokes[:, idx + 1 : idx + 2, :])
-                    / strokes.size(1)
-                )
+            (eos, pi, mu1, mu2, sigma1, sigma2, rho), _ = self.model(strokes, onehot)
+
+            loss = self.criterion(
+                eos[:, :-1],
+                pi[:, :-1],
+                mu1[:, :-1],
+                mu2[:, :-1],
+                sigma1[:, :-1],
+                sigma2[:, :-1],
+                rho[:, :-1],
+                torch.roll(strokes, -1, dims=1)[:, :-1],
+            ) / strokes.size(1)
+
             if loss.data.item() == inf or loss.data.item() == -inf:
-                logger.info("Warning, received inf loss. Skipping it")
+                logger.info("Warning, received inf loss. Skipping iteration")
+                continue
             elif loss.data.item() != loss.data.item():
-                logger.info("Warning, received NaN loss.")
+                logger.info("Warning, received NaN loss. Skipping iteration")
+                continue
             else:
                 losses = losses + loss.data.item()
             # Zero the optimizer gradient

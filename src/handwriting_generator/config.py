@@ -15,7 +15,7 @@ class Parameters:
     probability_bias: float = 1.0
     # Training Parameters
     n_epochs: int = 2
-    batch_size: int = 64
+    batch_size: int = 32
     max_norm: int = 400
     # Optimizer Parameters
     learning_rate: float = 1.0e-4

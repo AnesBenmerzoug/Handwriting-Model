@@ -10,10 +10,9 @@ class HandwritingLoss(Module):
         super(HandwritingLoss, self).__init__()
         self.params = parameters
 
-    def forward(self, mdn_parameters, stroke):
-        eos, pi, mu1, mu2, sigma1, sigma2, rho = mdn_parameters
-        x_data, y_data, eos_data = stroke.chunk(3, dim=2)
-        N = self.bivariateGaussian(x_data, y_data, mu1, mu2, sigma1, sigma2, rho)
+    def forward(self, eos, pi, mu1, mu2, sigma1, sigma2, rho, strokes):
+        x_data, y_data, eos_data = strokes.chunk(3, dim=2)
+        N = self.bivariate_gaussian(x_data, y_data, mu1, mu2, sigma1, sigma2, rho)
         epsilon = 1e-20
         term1 = -((pi * N).sum(dim=2, keepdim=True).clamp(min=epsilon)).log()
         term2 = (
@@ -23,7 +22,8 @@ class HandwritingLoss(Module):
         reduction_factor = reduce((lambda x, y: x * y), loss.size())
         return loss.sum() / reduction_factor
 
-    def bivariateGaussian(self, x, y, mu1, mu2, sigma1, sigma2, rho):
+    @staticmethod
+    def bivariate_gaussian(x, y, mu1, mu2, sigma1, sigma2, rho):
         Z = (
             ((x - mu1) / sigma1) ** 2.0
             + ((y - mu2) / sigma2) ** 2.0
