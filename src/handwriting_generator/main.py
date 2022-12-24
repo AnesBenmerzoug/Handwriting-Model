@@ -5,6 +5,7 @@ import time
 import click
 
 from handwriting_generator import Tester, Trainer, plotlosses
+from handwriting_generator.config import Parameters
 
 logging.basicConfig(
     level=logging.INFO,
@@ -14,42 +15,19 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class Parameters:
-    # Model Parameters
-    input_size = 3
-    hidden_size = 200
-    num_window_components = 10
-    num_mixture_components = 20
-    probability_bias = 1.0
-    # Dataset Parameters
-    min_num_points = 300
-    num_workers = 2
-    # Training Parameters
-    num_epochs = 2
-    batch_size = 256
-    max_norm = 400
-    # Optimizer Parameters
-    optimizer = "Adam"
-    learning_rate = 1.0e-4
-    momentum = 0.9
-    nesterov = True
-
-
 @click.command()
+@click.option("--n-epochs", type=int, default=100)
 @click.option("--train/--no-train", is_flag=True, default=True)
 @click.option("--gpu/--no-gpu", is_flag=True, default=True)
-def main(train: bool, gpu: bool):
-    logger.info("Starting time: {}".format(time.asctime()))
-
+def main(n_epochs: int, train: bool, gpu: bool):
     # To have a more verbose output in case of an exception
     faulthandler.enable()
 
-    Parameters.train_model = train
-    Parameters.use_gpu = gpu
+    parameters = Parameters(n_epochs=n_epochs, train_model=train, use_gpu=gpu)
 
-    if Parameters.train_model is True:
+    if parameters.train_model is True:
         # Instantiating the trainer
-        trainer = Trainer(Parameters)
+        trainer = Trainer(parameters)
         # Training the model
         avg_losses = trainer.train_model()
         # Plot losses
@@ -61,13 +39,11 @@ def main(train: bool, gpu: bool):
         )
 
     # Instantiating the tester
-    tester = Tester(Parameters)
+    tester = Tester(parameters)
     # Testing the model
     tester.test_random_sample()
     # Testing the model accuracy
     # test_losses = tester.test_model()
-
-    logger.info("Finishing time: {}".format(time.asctime()))
 
 
 if __name__ == "__main__":

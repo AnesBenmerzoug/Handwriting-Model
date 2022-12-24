@@ -6,14 +6,15 @@ import torch
 import torch.optim as optim
 from torch.nn.utils import clip_grad_norm_
 from torch.utils.data import DataLoader
-from torch.utils.data.sampler import RandomSampler
-from tqdm.auto import trange
+from tqdm.auto import tqdm, trange
 from tqdm.contrib.logging import logging_redirect_tqdm
 
+from handwriting_generator.config import Parameters
 from handwriting_generator.constants import OUTPUT_DIR
 from handwriting_generator.dataset import IAMDataset
 from handwriting_generator.loss import HandwritingLoss
 from handwriting_generator.model import HandwritingGenerator
+from handwriting_generator.utils import collate_fn
 
 __all__ = ["Trainer"]
 
@@ -21,23 +22,23 @@ logger = logging.getLogger(__name__)
 
 
 class Trainer:
-    def __init__(self, parameters):
+    def __init__(self, parameters: Parameters):
 
         self.params = parameters
 
         # Initialize datasets
-        self.trainset = IAMDataset(self.params)
+        self.trainset = IAMDataset()
 
         self.alphabet = self.trainset.alphabet
         alphabet_size = len(self.alphabet)
 
         # Initialize loaders
-        self.trainloader = DataLoader(
+        self.train_loader = DataLoader(
             self.trainset,
             batch_size=self.params.batch_size,
-            shuffle=False,
-            num_workers=self.params.num_workers,
-            sampler=RandomSampler(self.trainset),
+            shuffle=True,
+            num_workers=0,
+            collate_fn=collate_fn,
         )
 
         # Checking for GPU
@@ -48,8 +49,8 @@ class Trainer:
         self.model = HandwritingGenerator(
             alphabet_size=alphabet_size,
             hidden_size=self.params.hidden_size,
-            num_window_components=self.params.num_window_components,
-            num_mixture_components=self.params.num_mixture_components,
+            n_window_components=self.params.n_window_components,
+            n_mixture_components=self.params.n_mixture_components,
         )
         self.model.to(self.device)
 
@@ -58,7 +59,9 @@ class Trainer:
         logger.info("Number of parameters = {}".format(self.model.num_parameters()))
 
         # Optimizer setup
-        self.optimizer = self.optimizer_select()
+        self.optimizer = optim.Adam(
+            self.model.parameters(), lr=self.params.learning_rate
+        )
 
         # Criterion
         self.criterion = HandwritingLoss(self.params)
@@ -66,11 +69,11 @@ class Trainer:
     def train_model(self):
         min_loss = None
         best_model = self.model.state_dict()
-        avg_losses = np.zeros(self.params.num_epochs)
+        avg_losses = np.zeros(self.params.n_epochs)
         path = OUTPUT_DIR / "trained_model.pt"
 
         with logging_redirect_tqdm():
-            for epoch in trange(self.params.num_epochs):
+            for epoch in trange(self.params.n_epochs):
                 try:
                     logger.info("Epoch {}".format(epoch + 1))
 
@@ -99,14 +102,14 @@ class Trainer:
     def train_epoch(self):
         losses = 0.0
         inf = float("inf")
-        for batch_index, (data) in enumerate(self.trainloader, 1):
+        for batch_index, (data) in tqdm(
+            enumerate(self.train_loader, 1), total=len(self.train_loader), leave=False
+        ):
             if batch_index % 20 == 0:
-                logger.info("Step {}".format(batch_index))
-                logger.info("Average Loss so far: {}".format(losses / batch_index))
+                logger.info(f"Step {batch_index}")
+                logger.info(f"Average Loss so far: {losses / batch_index}")
             # Split data tuple
-            onehot, strokes = data
-            # Plot strokes
-            # plotstrokes(strokes)
+            onehot, strokes, onehot_lengths, strokes_lens = data
             # Move inputs to correct device
             onehot, strokes = onehot.to(self.device), strokes.to(self.device)
             # Main Model Forward Step
@@ -141,7 +144,7 @@ class Trainer:
                 torch.cuda.synchronize()
             del onehot, strokes, data
         # Compute the average loss for this epoch
-        avg_loss = losses / len(self.trainloader)
+        avg_loss = losses / len(self.train_loader)
         return avg_loss
 
     def save_model(self, model_parameters, path):
@@ -161,29 +164,8 @@ class Trainer:
             "parameters": {
                 "alphabet_size": self.model.alphabet_size,
                 "hidden_size": self.model.hidden_size,
-                "num_window_components": self.model.num_window_components,
-                "num_mixture_components": self.model.num_mixture_components,
+                "n_window_components": self.model.n_window_components,
+                "n_mixture_components": self.model.n_mixture_components,
             },
         }
         return package
-
-    def optimizer_select(self):
-        if self.params.optimizer == "Adam":
-            return optim.Adam(self.model.parameters(), lr=self.params.learning_rate)
-        elif self.params.optimizer == "Adadelta":
-            return optim.Adadelta(self.model.parameters(), lr=self.params.learning_rate)
-        elif self.params.optimizer == "SGD":
-            return optim.SGD(
-                self.model.parameters(),
-                lr=self.params.learning_rate,
-                momentum=self.params.momentum,
-                nesterov=self.params.nesterov,
-            )
-        elif self.params.optimizer == "RMSprop":
-            return optim.RMSprop(
-                self.model.parameters(),
-                lr=self.params.learning_rate,
-                momentum=self.params.momentum,
-            )
-        else:
-            raise NotImplementedError

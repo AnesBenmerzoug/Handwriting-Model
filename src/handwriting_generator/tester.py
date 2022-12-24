@@ -2,17 +2,19 @@ import logging
 import random
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
+from handwriting_generator.config import Parameters
 from handwriting_generator.constants import OUTPUT_DIR
 from handwriting_generator.dataset import IAMDataset
 from handwriting_generator.loss import HandwritingLoss
 from handwriting_generator.model import HandwritingGenerator
-from handwriting_generator.utils import plotstrokes, plotwindow
+from handwriting_generator.utils import collate_fn, plot_strokes, plotwindow
 
 __all__ = ["Tester"]
 
@@ -20,18 +22,19 @@ logger = logging.getLogger(__name__)
 
 
 class Tester:
-    def __init__(self, parameters):
+    def __init__(self, parameters: Parameters):
         self.params = parameters
 
         # Initialize datasets
-        self.testset = IAMDataset(self.params)
+        self.testset = IAMDataset()
 
         # Initialize loaders
-        self.testloader = DataLoader(
+        self.test_loader = DataLoader(
             self.testset,
             batch_size=1,
             shuffle=True,
-            num_workers=self.params.num_workers,
+            num_workers=0,
+            collate_fn=collate_fn,
         )
 
         # Initialize model
@@ -46,7 +49,7 @@ class Tester:
         losses = 0.0
         inf = float("inf")
         with logging_redirect_tqdm():
-            for data in tqdm(self.testloader):
+            for data in tqdm(self.test_loader):
                 # Split data tuple
                 onehot, strokes = data
                 # Main Model Forward Step
@@ -69,7 +72,7 @@ class Tester:
                     logger.info("Warning, received NaN loss.")
                 else:
                     losses = losses + loss.data.item()
-        return losses / len(self.testloader)
+        return losses / len(self.test_loader)
 
     def test_random_sample(self):
         self.model.eval()
@@ -77,8 +80,8 @@ class Tester:
         data = self.testset[index]
         # Split data tuple
         onehot, strokes = data
-        onehot, strokes = onehot.unsqueeze(0), strokes.unsqueeze(0)
-        logger.info(self.testset.ascii[index])
+        onehot, strokes = onehot.unsqueeze(0).float(), strokes.unsqueeze(0).float()
+        logger.info(self.testset.transcriptions[index])
         # Main Model Forward Step
         self.model.reset_state()
         all_outputs = []
@@ -107,8 +110,10 @@ class Tester:
             counter += 1
         phis = np.vstack(phis)
         windows = np.vstack(windows)
+        _, axes = plt.subplots(2, 1)
         generated_strokes = torch.cat((strokes[:, 0:1], *all_outputs), dim=1).data
-        plotstrokes(strokes.data, generated_strokes)
+        plot_strokes(strokes.numpy(), ax=axes[0])
+        plot_strokes(generated_strokes.numpy(), ax=axes[1])
         plotwindow(phis, windows)
 
     @staticmethod

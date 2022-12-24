@@ -5,7 +5,9 @@ from pathlib import Path
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 from matplotlib.axes import Axes
+from torch.nn.utils.rnn import pad_sequence
 from tqdm.auto import tqdm
 
 __all__ = [
@@ -16,6 +18,7 @@ __all__ = [
     "load_transcriptions",
     "convert_stroke_set_to_array",
     "filter_line_strokes_and_transcriptions",
+    "collate_fn",
 ]
 
 
@@ -125,6 +128,19 @@ def convert_stroke_set_to_array(stroke_set: list[list[tuple[int, int]]]) -> np.n
     # Insert the point (0, 0, 1) at the beginning
     strokes_array = np.insert(strokes_array, 0, [0, 0, 1], axis=0)
     return strokes_array
+
+
+def collate_fn(
+    batch: list[tuple[torch.Tensor, torch.Tensor]]
+) -> tuple[torch.Tensor, torch.Tensor, list[int], list[int]]:
+    onehot, strokes = zip(*batch)
+    onehot_lengths = [len(x) for x in onehot]
+    strokes_lens = [len(x) for x in strokes]
+
+    onehot_pad = pad_sequence(onehot, batch_first=True, padding_value=1).float()
+    strokes_pad = pad_sequence(strokes, batch_first=True, padding_value=-1).float()
+
+    return onehot_pad, strokes_pad, onehot_lengths, strokes_lens
 
 
 def plotlosses(losses, title="", xlabel="", ylabel=""):

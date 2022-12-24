@@ -2,23 +2,27 @@ import numpy as np
 import torch
 from torch.nn.modules import LSTM, Module
 
-from handwriting_generator.modules import MDN, GaussianWindow
+from handwriting_generator.modules import GaussianWindow, MixtureDensityNetwork
 
 
 class HandwritingGenerator(Module):
     def __init__(
-        self, alphabet_size, hidden_size, num_window_components, num_mixture_components
+        self,
+        alphabet_size: int,
+        hidden_size: int,
+        n_window_components: int,
+        n_mixture_components: int,
     ):
         super(HandwritingGenerator, self).__init__()
         self.alphabet_size = alphabet_size
         self.hidden_size = hidden_size
-        self.num_window_components = num_window_components
-        self.num_mixture_components = num_mixture_components
+        self.n_window_components = n_window_components
+        self.n_mixture_components = n_mixture_components
         # First LSTM layer, takes as input a tuple (x, y, eol)
         self.lstm1_layer = LSTM(input_size=3, hidden_size=hidden_size, batch_first=True)
         # Gaussian Window layer
         self.window_layer = GaussianWindow(
-            input_size=hidden_size, num_components=num_window_components
+            input_size=hidden_size, n_components=n_window_components
         )
         # Second LSTM layer, takes as input the concatenation of the input,
         # the output of the first LSTM layer
@@ -37,8 +41,8 @@ class HandwritingGenerator(Module):
         )
 
         # Mixture Density Network Layer
-        self.output_layer = MDN(
-            input_size=hidden_size, num_mixtures=num_mixture_components
+        self.output_layer = MixtureDensityNetwork(
+            input_size=hidden_size, n_mixtures=n_mixture_components
         )
 
         # Hidden State Variables
@@ -47,7 +51,7 @@ class HandwritingGenerator(Module):
         self.hidden2 = None
         self.hidden3 = None
 
-        # Initiliaze parameters
+        # Initialize parameters
         self.reset_parameters()
 
     def forward(self, strokes, onehot, bias=None):
@@ -65,13 +69,13 @@ class HandwritingGenerator(Module):
         )
         # Third LSTM Layer
         output3, self.hidden3 = self.lstm3_layer(output2, self.hidden3)
-        # MDN Layer
+        # MixtureDensityNetwork Layer
         eos, pi, mu1, mu2, sigma1, sigma2, rho = self.output_layer(output3, bias)
         return (eos, pi, mu1, mu2, sigma1, sigma2, rho), (window, phi)
 
     @staticmethod
     def sample_bivariate_gaussian(pi, mu1, mu2, sigma1, sigma2, rho):
-        # Pick distribution from the MDN
+        # Pick distribution from the MixtureDensityNetwork
         p = pi.data[0, 0, :].numpy()
         idx = np.random.choice(p.shape[0], p=p)
         m1 = mu1.data[0, 0, idx]
@@ -118,7 +122,7 @@ class HandwritingGenerator(Module):
         model = HandwritingGenerator(
             self.alphabet_size,
             self.hidden_size,
-            self.num_window_components,
-            self.num_mixture_components,
+            self.n_window_components,
+            self.n_mixture_components,
         )
         return model
