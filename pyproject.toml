@@ -5,6 +5,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "torch==1.13.1",
+    "pytorch_lightning-1.8.6",
     "numpy==1.24.0",
     "matplotlib==3.6.2",
     "click==8.1.3",

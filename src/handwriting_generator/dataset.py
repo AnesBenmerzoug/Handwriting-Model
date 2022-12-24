@@ -4,20 +4,26 @@ import pickle
 import string
 
 import numpy as np
+import pytorch_lightning as pl
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import DataLoader, Dataset, random_split
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
-from handwriting_generator.constants import DATA_DIR
+from handwriting_generator.constants import (
+    LINE_STROKES_DIR,
+    PREPROCESSED_DATA_FILE,
+    TRANSCRIPTIONS_DIR,
+)
 from handwriting_generator.utils import (
+    collate_fn,
     convert_stroke_set_to_array,
     filter_line_strokes_and_transcriptions,
     load_line_strokes,
     load_transcriptions,
 )
 
-__all__ = ["IAMDataset"]
+__all__ = ["IAMDataset", "IAMDataModule"]
 
 logger = logging.getLogger(__name__)
 
@@ -25,18 +31,43 @@ logger = logging.getLogger(__name__)
 class IAMDataset(Dataset):
     """IAM On-Line Handwriting Dataset Class"""
 
-    def __init__(self):
-        self.transcriptions_dir = DATA_DIR / "ascii"
-        self.line_strokes_dir = DATA_DIR / "lineStrokes"
+    def __init__(self, alphabet: str):
+        self.alphabet = alphabet
 
-        self.preprocessed_data_filename = DATA_DIR / "preprocessed_data.pickle"
+        self.strokes_array_list: list[np.ndarray] = []
+        self.transcriptions_list: list[str] = []
+        self.transcriptions_onehot_list: list[np.ndarray] = []
 
-        if not (self.transcriptions_dir.exists() and self.line_strokes_dir.exists()):
-            raise FileNotFoundError(
-                f"Could not find data files. "
-                "Please make sure to follow the instructions in the README "
-                "to download and set up the dataset."
-            )
+        with PREPROCESSED_DATA_FILE.open("rb") as f:
+            (
+                self.strokes_array_list,
+                self.transcriptions_list,
+                self.transcriptions_onehot_list,
+            ) = pickle.load(f)
+
+        self.length = len(self.transcriptions_list)
+
+    def __len__(self) -> int:
+        return self.length
+
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, str]:
+        return (
+            torch.tensor(self.strokes_array_list[idx]),
+            torch.tensor(self.transcriptions_onehot_list[idx]),
+            self.transcriptions_list[idx],
+        )
+
+
+class IAMDataModule(pl.LightningDataModule):
+    def __init__(
+        self, *, train_size: float = 0.8, batch_size: int = 32, num_workers: int = 0
+    ):
+        super().__init__()
+        self.batch_size = batch_size
+        self.train_size = train_size
+        self.num_workers = num_workers
+        if self.train_size < 0 or self.train_size >= 1.0:
+            raise ValueError("train_size should be in the range (0, 1)")
 
         # unknown character + space + some punctuation marks + lowercase letters + digits
         self.unknown_character = "^"
@@ -46,35 +77,29 @@ class IAMDataset(Dataset):
             + [".,\"'?!:()"]
             + [c for c in string.ascii_lowercase + string.digits]
         )
-        self.length = 0
 
-        self.transcriptions: list[str] = []
-        self.strokes_array_list: list[np.ndarray] = []
-        self.transcriptions_onehot = []
-
-        if not (os.path.exists(self.preprocessed_data_filename)):
-            logger.info(
-                f"Preprocessing data and caching it in file {self.preprocessed_data_filename}"
+        if not (TRANSCRIPTIONS_DIR.exists() and LINE_STROKES_DIR.exists()):
+            raise FileNotFoundError(
+                f"Could not find data files. "
+                "Please make sure to follow the instructions in the README "
+                "to download and set up the dataset."
             )
-            transcriptions_list, strokes_array_list = self.preprocess_data()
-        else:
+
+    def prepare_data(self) -> None:
+        if PREPROCESSED_DATA_FILE.exists():
             logger.info(
-                f"Preprocessed data file {self.preprocessed_data_filename} exists already"
+                f"Preprocessed data file {PREPROCESSED_DATA_FILE} exists already"
             )
-            transcriptions_list = None
-            strokes_array_list = None
-
-        self.load_data(transcriptions_list, strokes_array_list)
-
-    def preprocess_data(self) -> tuple[list[str], list[np.ndarray]]:
-        transcriptions = load_transcriptions(self.transcriptions_dir)
-        line_strokes = load_line_strokes(self.line_strokes_dir)
+            return
+        transcriptions = load_transcriptions(TRANSCRIPTIONS_DIR)
+        line_strokes = load_line_strokes(LINE_STROKES_DIR)
         line_strokes, transcriptions = filter_line_strokes_and_transcriptions(
             line_strokes, transcriptions
         )
 
-        transcriptions_list = []
         strokes_array_list = []
+        transcriptions_list = []
+        transcriptions_onehot_list = []
 
         with logging_redirect_tqdm():
             for key in tqdm(line_strokes.keys()):
@@ -82,51 +107,60 @@ class IAMDataset(Dataset):
                 transcription = transcriptions[key]
                 if len(transcription) <= 10:
                     logger.info(f"Transcription is too short: '{transcription}'")
+                    continue
                 elif len(transcription) >= 50:
                     logger.info(f"Transcription is too long: '{transcription}'")
-                else:
-                    transcriptions_list.append(transcription)
-                    strokes_array_list.append(convert_stroke_set_to_array(stroke_set))
+                    continue
 
-        with open(self.preprocessed_data_filename, "wb+") as f:
-            pickle.dump([transcriptions_list, strokes_array_list], f)
+                strokes_array = convert_stroke_set_to_array(stroke_set)
+                strokes_array = np.concatenate(
+                    [
+                        strokes_array[:, :2] / np.std(strokes_array[:, :2], axis=0),
+                        strokes_array[:, [2]],
+                    ],
+                    axis=1,
+                )
+                strokes_array_list.append(strokes_array)
 
-        return transcriptions_list, strokes_array_list
+                transcription = "".join(
+                    c if c in self.alphabet else self.alphabet[0]
+                    for c in transcription.lower()
+                )
+                onehot = np.zeros(
+                    shape=(len(transcription), len(self.alphabet) + 1), dtype=np.uint8
+                )
+                indices = [self.alphabet.find(c) for c in transcription]
+                onehot[np.arange(len(transcription)), indices] = 1
 
-    def load_data(
-        self,
-        transcriptions_list: list[str] | None = None,
-        strokes_array_list: list[np.ndarray] | None = None,
-    ) -> None:
-        if transcriptions_list is None or strokes_array_list is None:
-            with self.preprocessed_data_filename.open("rb") as f:
-                transcriptions_list, strokes_array_list = pickle.load(f)
+                transcriptions_list.append(transcription)
+                transcriptions_onehot_list.append(onehot)
 
-        # Scale the X and Y components down by dividing by their standard deviation
-        self.strokes_array_list = [
-            np.concatenate([x[:, :2] / np.std(x[:, :2], axis=0), x[:, [2]]], axis=1)
-            for x in strokes_array_list
-        ]
-
-        for transcription in tqdm(transcriptions_list):
-            transcription = "".join(
-                c if c in self.alphabet else self.unknown_character
-                for c in transcription.lower()
+        with open(PREPROCESSED_DATA_FILE, "wb+") as f:
+            pickle.dump(
+                [strokes_array_list, transcriptions_list, transcriptions_onehot_list], f
             )
-            onehot = np.zeros(
-                shape=(len(transcription), len(self.alphabet) + 1), dtype=np.uint8
-            )
-            indices = [self.alphabet.find(c) for c in transcription]
-            onehot[np.arange(len(transcription)), indices] = 1
-            self.transcriptions.append(transcription)
-            self.transcriptions_onehot.append(onehot)
 
-        self.length = len(self.transcriptions)
+    def setup(self, stage: str):
+        dataset_full = IAMDataset(self.alphabet)
+        subsets = random_split(dataset_full, [self.train_size, 1 - self.train_size])
+        self.train_dataset = subsets[0]
+        self.val_dataset = subsets[1]
 
-    def __len__(self) -> int:
-        return self.length
+    def train_dataloader(self):
+        return DataLoader(
+            self.train_dataset,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=self.num_workers,
+            drop_last=True,
+            collate_fn=collate_fn,
+        )
 
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
-        return torch.tensor(self.transcriptions_onehot[idx]), torch.tensor(
-            self.strokes_array_list[idx]
+    def val_dataloader(self):
+        return DataLoader(
+            self.val_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
+            collate_fn=collate_fn,
         )

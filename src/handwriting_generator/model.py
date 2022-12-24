@@ -1,23 +1,31 @@
 import numpy as np
+import pytorch_lightning as pl
 import torch
-from torch.nn.modules import LSTM, Module
+from torch.nn.modules import LSTM
 
+from handwriting_generator.loss import HandwritingLoss
 from handwriting_generator.modules import GaussianWindow, MixtureDensityNetwork
 
+__all__ = ["HandwritingGenerator"]
 
-class HandwritingGenerator(Module):
+
+class HandwritingGenerator(pl.LightningModule):
     def __init__(
         self,
         alphabet_size: int,
         hidden_size: int,
         n_window_components: int,
         n_mixture_components: int,
+        *,
+        learning_rate: float = 1e-4,
     ):
         super(HandwritingGenerator, self).__init__()
         self.alphabet_size = alphabet_size
         self.hidden_size = hidden_size
         self.n_window_components = n_window_components
         self.n_mixture_components = n_mixture_components
+        self.learning_rate = learning_rate
+
         # First LSTM layer, takes as input a tuple (x, y, eol)
         self.lstm1_layer = LSTM(input_size=3, hidden_size=hidden_size, batch_first=True)
         # Gaussian Window layer
@@ -45,8 +53,8 @@ class HandwritingGenerator(Module):
             input_size=hidden_size, n_mixtures=n_mixture_components
         )
 
-        # Initialize parameters
-        self.reset_parameters()
+        # Loss function
+        self.loss = HandwritingLoss()
 
     def forward(self, strokes, onehot, bias=None):
         # First LSTM Layer
@@ -83,13 +91,30 @@ class HandwritingGenerator(Module):
         Y = Z[:, :, 1:2]
         return X, Y
 
-    def reset_parameters(self):
-        for parameter in self.parameters():
-            if len(parameter.size()) == 2:
-                torch.nn.init.xavier_uniform_(parameter, gain=1.0)
-            else:
-                stdv = 1.0 / parameter.size(0)
-                torch.nn.init.uniform_(parameter, -stdv, stdv)
+    def training_step(self, batch, batch_idx):
+        # Split data tuple
+        strokes, onehot, strokes_lens, onehot_lengths = batch
+        # Move inputs to correct device
+        # onehot, strokes = onehot.to(self.device), strokes.to(self.device)
+        # Main Model Forward Step
+        (eos, pi, mu1, mu2, sigma1, sigma2, rho), _ = self(strokes, onehot)
+
+        loss = self.loss(
+            eos[:, :-1],
+            pi[:, :-1],
+            mu1[:, :-1],
+            mu2[:, :-1],
+            sigma1[:, :-1],
+            sigma2[:, :-1],
+            rho[:, :-1],
+            torch.roll(strokes, -1, dims=1)[:, :-1],
+        ) / strokes.size(1)
+        self.log("train_loss", loss)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        val_loss = self.training_step(batch, batch_idx)
+        self.log("val_loss", val_loss)
 
     def num_parameters(self):
         num = 0
@@ -111,3 +136,7 @@ class HandwritingGenerator(Module):
             self.n_mixture_components,
         )
         return model
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.RMSprop(self.parameters(), lr=self.learning_rate)
+        return optimizer

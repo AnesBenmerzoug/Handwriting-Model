@@ -6,10 +6,6 @@ from torch.nn import Module
 
 
 class HandwritingLoss(Module):
-    def __init__(self, parameters):
-        super(HandwritingLoss, self).__init__()
-        self.params = parameters
-
     def forward(self, eos, pi, mu1, mu2, sigma1, sigma2, rho, strokes):
         x_data, y_data, eos_data = strokes.chunk(3, dim=2)
         N = self.bivariate_gaussian(x_data, y_data, mu1, mu2, sigma1, sigma2, rho)

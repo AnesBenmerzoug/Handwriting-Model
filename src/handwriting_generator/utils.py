@@ -133,14 +133,15 @@ def convert_stroke_set_to_array(stroke_set: list[list[tuple[int, int]]]) -> np.n
 def collate_fn(
     batch: list[tuple[torch.Tensor, torch.Tensor]]
 ) -> tuple[torch.Tensor, torch.Tensor, list[int], list[int]]:
-    onehot, strokes = zip(*batch)
-    onehot_lengths = [len(x) for x in onehot]
+    strokes, onehot, _ = zip(*batch)
+
     strokes_lens = [len(x) for x in strokes]
+    onehot_lengths = [len(x) for x in onehot]
 
-    onehot_pad = pad_sequence(onehot, batch_first=True, padding_value=1).float()
     strokes_pad = pad_sequence(strokes, batch_first=True, padding_value=-1).float()
+    onehot_pad = pad_sequence(onehot, batch_first=True, padding_value=1).float()
 
-    return onehot_pad, strokes_pad, onehot_lengths, strokes_lens
+    return strokes_pad, onehot_pad, strokes_lens, onehot_lengths
 
 
 def plotlosses(losses, title="", xlabel="", ylabel=""):
