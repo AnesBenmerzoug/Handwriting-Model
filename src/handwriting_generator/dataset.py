@@ -2,8 +2,6 @@ import logging
 import os
 import pickle
 import string
-import tarfile
-import xml.etree.ElementTree as ET
 
 import numpy as np
 import torch
@@ -12,6 +10,12 @@ from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 from handwriting_generator.constants import DATA_DIR
+from handwriting_generator.utils import (
+    convert_stroke_set_to_array,
+    filter_line_strokes_and_transcriptions,
+    load_line_strokes,
+    load_transcriptions,
+)
 
 __all__ = ["IAMDataset"]
 
@@ -21,180 +25,108 @@ logger = logging.getLogger(__name__)
 class IAMDataset(Dataset):
     """IAM On-Line Handwriting Dataset Class"""
 
-    def __init__(self, parameters):
-        """
-        Args:
-            parameters (namedTuple): an object containing the session parameters
-        """
-        self.params = parameters
+    def __init__(self):
+        self.transcriptions_dir = DATA_DIR / "ascii"
+        self.line_strokes_dir = DATA_DIR / "lineStrokes"
 
-        self.ascii_data_dir = DATA_DIR / "ascii"
-        self.line_strokes_data_dir = DATA_DIR / "lineStrokes"
+        self.preprocessed_data_filename = DATA_DIR / "preprocessed_data.pickle"
 
-        self.data_filename = DATA_DIR / "strokes_data.pickled"
-
-        if not (self.ascii_data_dir.exists() and self.line_strokes_file.exists()):
+        if not (self.transcriptions_dir.exists() and self.line_strokes_dir.exists()):
             raise FileNotFoundError(
                 f"Could not find data files. "
                 "Please make sure to follow the instructions in the README "
                 "to download and set up the dataset."
             )
 
-        # space + uppercase and lowercase letters, their indices will be shifted when transforming them
-        # to one hot in order to have index 0 for unknown characters
+        # unknown character + space + some punctuation marks + lowercase letters + digits
+        self.unknown_character = "^"
         self.alphabet = "".join(
-            [" "] + [c for c in string.ascii_lowercase + string.ascii_uppercase]
+            [self.unknown_character]
+            + [" "]
+            + [".,\"'?!:()"]
+            + [c for c in string.ascii_lowercase + string.digits]
         )
         self.length = 0
-        self.limit = 300
-        self.min_num_points = self.params.min_num_points
 
-        self.ascii = []
-        self.strokes = []
-        self.ascii_onehot = []
+        self.transcriptions: list[str] = []
+        self.strokes_array_list: list[np.ndarray] = []
+        self.transcriptions_onehot = []
 
-        if not (os.path.exists(self.data_filename)):
-            logger.info("Creating file {}".format(self.data_filename))
-            self.prepocess_data()
+        if not (os.path.exists(self.preprocessed_data_filename)):
+            logger.info(
+                f"Preprocessing data and caching it in file {self.preprocessed_data_filename}"
+            )
+            transcriptions_list, strokes_array_list = self.preprocess_data()
         else:
-            logger.info("File {} exists already".format(self.data_filename))
+            logger.info(
+                f"Preprocessed data file {self.preprocessed_data_filename} exists already"
+            )
+            transcriptions_list = None
+            strokes_array_list = None
 
-        self.load_data()
+        self.load_data(transcriptions_list, strokes_array_list)
 
-    def prepocess_data(self):
-        def create_data_path_list():
-            data_path_list = []
+    def preprocess_data(self) -> tuple[list[str], list[np.ndarray]]:
+        transcriptions = load_transcriptions(self.transcriptions_dir)
+        line_strokes = load_line_strokes(self.line_strokes_dir)
+        line_strokes, transcriptions = filter_line_strokes_and_transcriptions(
+            line_strokes, transcriptions
+        )
 
-            ascii_dir = self.ascii_data_dir
-
-            for root, dirs, files in os.walk(ascii_dir):
-                if not files:
-                    continue
-                for f in files:
-                    ascii_path = os.path.join(root, f)
-                    strokes_dir = root.replace("ascii", "lineStrokes")
-                    stroke_paths = []
-                    if os.path.isdir(strokes_dir):
-                        for stroke_file in os.listdir(strokes_dir):
-                            if f[:-4] in stroke_file:
-                                stroke_paths.append(
-                                    os.path.join(strokes_dir, stroke_file)
-                                )
-                        stroke_paths.sort(key=lambda name: int(name[-6:-4]))
-                        data_path_list.append((ascii_path, stroke_paths))
-            return data_path_list
-
-        def getAscii(filename):
-            with open(filename, "r") as f:
-                text = f.read()
-            text = text[text.find("CSR:") + 6 :]
-            return text.split("\n")
-
-        def getStrokes(filename_list):
-            result = []
-            for stroke_file in filename_list:
-                root = ET.parse(stroke_file).getroot()
-                x_offset = min([float(root[0][i].attrib["x"]) for i in range(1, 4)])
-                y_offset = min([float(root[0][i].attrib["y"]) for i in range(1, 4)])
-                strokes = []
-                for stroke in root[1].findall("Stroke"):
-                    points = []
-                    for point in stroke.findall("Point"):
-                        points.append(
-                            (
-                                float(point.attrib["x"]) - x_offset,
-                                float(point.attrib["y"]) - y_offset,
-                            )
-                        )
-                    strokes.append(points)
-                result.append(strokes)
-            return result
-
-        def convert_stroke_to_array(stroke):
-            n_point = 0
-            for i in range(len(stroke)):
-                n_point += len(stroke[i])
-            stroke_data = np.zeros((n_point, 3))
-
-            prev_x = 0
-            prev_y = 0
-            counter = 0
-
-            for j in range(len(stroke)):
-                for k in range(len(stroke[j])):
-                    # Limit the relative distance between points
-                    stroke_data[counter, 0] = int(stroke[j][k][0]) - prev_x
-                    stroke_data[counter, 1] = int(stroke[j][k][1]) - prev_y
-                    prev_x = int(stroke[j][k][0])
-                    prev_y = int(stroke[j][k][1])
-                    stroke_data[counter, 2] = 0
-                    if k == (len(stroke[j]) - 1):  # end of stroke
-                        stroke_data[counter, 2] = 1
-                    counter += 1
-            return stroke_data
-
-        data_path_list = create_data_path_list()
-        text_array = []
-        strokes_array = []
+        transcriptions_list = []
+        strokes_array_list = []
 
         with logging_redirect_tqdm():
-            for ascii_file, strokes_files in tqdm(data_path_list):
-                # Get the text from the files
-                text_list = getAscii(ascii_file)
+            for key in tqdm(line_strokes.keys()):
+                stroke_set = line_strokes[key]
+                transcription = transcriptions[key]
+                if len(transcription) <= 10:
+                    logger.info(f"Transcription is too short: '{transcription}'")
+                elif len(transcription) >= 50:
+                    logger.info(f"Transcription is too long: '{transcription}'")
+                else:
+                    transcriptions_list.append(transcription)
+                    strokes_array_list.append(convert_stroke_set_to_array(stroke_set))
 
-                # Get the strokes from the files
-                strokes_list = getStrokes(strokes_files)
+        with open(self.preprocessed_data_filename, "wb+") as f:
+            pickle.dump([transcriptions_list, strokes_array_list], f)
 
-                for text, strokes in zip(text_list, strokes_list):
-                    if len(text) > 10:
-                        text_array.append(text)
-                        strokes_array.append(convert_stroke_to_array(strokes))
-                    else:
-                        logger.info("Text was too short: {}".format(text))
+        return transcriptions_list, strokes_array_list
 
-        assert len(text_array) == len(strokes_array)
-        with open(self.data_filename, "wb+") as f:
-            pickle.dump([text_array, strokes_array], f)
+    def load_data(
+        self,
+        transcriptions_list: list[str] | None = None,
+        strokes_array_list: list[np.ndarray] | None = None,
+    ) -> None:
+        if transcriptions_list is None or strokes_array_list is None:
+            with self.preprocessed_data_filename.open("rb") as f:
+                transcriptions_list, strokes_array_list = pickle.load(f)
 
-    def load_data(self):
-        with open(self.data_filename, "rb") as f:
-            raw_ascii, raw_strokes = pickle.load(f)
-        self.ascii_onehot = []
-        for sentence, stroke in zip(raw_ascii, raw_strokes):
-            if len(stroke) <= self.min_num_points:
-                continue
-            else:
-                stroke = stroke[: self.min_num_points, :]
-            self.ascii.append(sentence)
-            # Insert the point (0, 0, 1) at the beginning
-            stroke = np.insert(stroke, 0, [0.0, 0.0, 1.0], axis=0)
-            self.strokes.append(stroke)
-            # Since we removed some points from the strokes, we should limit the size of the sentence too
-            sentence_size = int(self.min_num_points / 22)
-            if len(sentence) >= sentence_size:
-                sentence = sentence[:sentence_size]
-            else:
-                sentence = sentence + "_" * (sentence_size - len(sentence))
-            onehot = np.zeros(
-                shape=(len(sentence), len(self.alphabet) + 1), dtype=np.uint8
-            )
-            indices = [self.alphabet.find(c) + 1 for c in sentence]
-            onehot[np.arange(len(sentence)), indices] = 1
-            self.ascii_onehot.append(onehot)
-        self.strokes = np.stack(self.strokes, axis=0)
         # Scale the X and Y components down by dividing by their standard deviation
-        # self.strokes[:, 1:, :2] = self.strokes[:, 1:, :2] - np.mean(self.strokes[:, 1:, :2], axis=(0, 1))
-        self.strokes[:, 1:, :2] = self.strokes[:, 1:, :2] / np.std(
-            self.strokes[:, 1:, :2], axis=(0, 1)
-        )
-        self.length = len(self.ascii)
+        self.strokes_array_list = [
+            np.concatenate([x[:, :2] / np.std(x[:, :2], axis=0), x[:, [2]]], axis=1)
+            for x in strokes_array_list
+        ]
 
-    def __len__(self):
+        for transcription in tqdm(transcriptions_list):
+            transcription = "".join(
+                c if c in self.alphabet else self.unknown_character
+                for c in transcription.lower()
+            )
+            onehot = np.zeros(
+                shape=(len(transcription), len(self.alphabet) + 1), dtype=np.uint8
+            )
+            indices = [self.alphabet.find(c) for c in transcription]
+            onehot[np.arange(len(transcription)), indices] = 1
+            self.transcriptions.append(transcription)
+            self.transcriptions_onehot.append(onehot)
+
+        self.length = len(self.transcriptions)
+
+    def __len__(self) -> int:
         return self.length
 
-    def __getitem__(self, idx):
-        """
-        :param idx (integer): index of the element to get
-        :return: onehot encoded ascii string Tensor, strokes Tensor
-        """
-        return torch.Tensor(self.ascii_onehot[idx]), torch.Tensor(self.strokes[idx])
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+        return torch.tensor(self.transcriptions_onehot[idx]), torch.tensor(
+            self.strokes_array_list[idx]
+        )
