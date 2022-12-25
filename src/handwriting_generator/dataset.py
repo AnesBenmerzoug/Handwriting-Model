@@ -59,7 +59,7 @@ class IAMDataset(Dataset):
 
 class IAMDataModule(pl.LightningDataModule):
     def __init__(
-        self, *, train_size: float = 0.8, batch_size: int = 32, num_workers: int = 0
+        self, *, train_size: float = 0.9, batch_size: int = 32, num_workers: int = 0
     ):
         super().__init__()
         self.batch_size = batch_size
@@ -144,7 +144,7 @@ class IAMDataModule(pl.LightningDataModule):
         self.train_dataset = subsets[0]
         self.val_dataset = subsets[1]
 
-    def train_dataloader(self):
+    def train_dataloader(self) -> DataLoader:
         return DataLoader(
             self.train_dataset,
             batch_size=self.batch_size,
@@ -154,10 +154,19 @@ class IAMDataModule(pl.LightningDataModule):
             collate_fn=collate_fn,
         )
 
-    def val_dataloader(self):
+    def val_dataloader(self) -> DataLoader:
         return DataLoader(
             self.val_dataset,
             batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
+            collate_fn=collate_fn,
+        )
+
+    def test_dataloader(self) -> DataLoader:
+        return DataLoader(
+            self.val_dataset,
+            batch_size=2,
             shuffle=False,
             num_workers=self.num_workers,
             collate_fn=collate_fn,

@@ -7,18 +7,20 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 from rich.progress import track
 from torch.nn.utils.rnn import pad_sequence
 
 __all__ = [
-    "plotlosses",
     "plot_strokes",
-    "plotwindow",
+    "plot_phi_and_window",
     "load_line_strokes",
     "load_transcriptions",
     "convert_stroke_set_to_array",
     "filter_line_strokes_and_transcriptions",
     "collate_fn",
+    "find_best_model_checkpoint",
+    "batch_index_select",
 ]
 
 
@@ -132,25 +134,38 @@ def convert_stroke_set_to_array(stroke_set: list[list[tuple[int, int]]]) -> np.n
 
 def collate_fn(
     batch: list[tuple[torch.Tensor, torch.Tensor]]
-) -> tuple[torch.Tensor, torch.Tensor, list[int], list[int]]:
-    strokes, onehot, _ = zip(*batch)
+) -> tuple[torch.Tensor, torch.Tensor, list[int], list[int], list[str]]:
+    strokes, onehot, transcriptions = zip(*batch)
 
-    strokes_lens = [len(x) for x in strokes]
+    strokes_lengths = [len(x) for x in strokes]
     onehot_lengths = [len(x) for x in onehot]
 
-    strokes_pad = pad_sequence(strokes, batch_first=True, padding_value=-1).float()
-    onehot_pad = pad_sequence(onehot, batch_first=True, padding_value=1).float()
+    strokes_pad = pad_sequence(strokes, batch_first=True, padding_value=0).float()
+    onehot_pad = pad_sequence(onehot, batch_first=True, padding_value=0).float()
 
-    return strokes_pad, onehot_pad, strokes_lens, onehot_lengths
+    return strokes_pad, onehot_pad, strokes_lengths, onehot_lengths, transcriptions
 
 
-def plotlosses(losses, title="", xlabel="", ylabel=""):
-    epochs = np.arange(losses.size) + 1
-    plt.plot(epochs, losses)
-    plt.xlabel(xlabel)
-    plt.ylabel(ylabel)
-    plt.title(title)
-    plt.show()
+def find_best_model_checkpoint(logs_dir: Path) -> Path:
+    logs_version_dirs = sorted(list(logs_dir.iterdir()), reverse=True)
+    logs_version_dirs = list(
+        filter(lambda x: x.joinpath("checkpoints").exists(), logs_version_dirs)
+    )
+    logs_last_version_dir = logs_version_dirs[0]
+    checkpoint_dir = logs_last_version_dir / "checkpoints"
+    checkpoint_paths = sorted(
+        [x for x in checkpoint_dir.glob("*.ckpt") if "last" not in x.name]
+    )
+    checkpoint_path = checkpoint_paths[-1]
+    return checkpoint_path
+
+
+def batch_index_select(
+    input: torch.Tensor, dim: int, indices: torch.Tensor
+) -> torch.Tensor:
+    return torch.cat(
+        [torch.index_select(x, dim, idx) for x, idx in zip(input, indices)]
+    )
 
 
 def plot_strokes(
@@ -187,16 +202,20 @@ def plot_strokes(
     return ax
 
 
-def plotwindow(phis, windows):
-    plt.figure(figsize=(16, 4))
-    plt.subplot(121)
-    plt.title("Phis", fontsize=20)
-    plt.xlabel("Ascii #", fontsize=15)
-    plt.ylabel("Time steps", fontsize=15)
-    plt.imshow(phis, interpolation="nearest", aspect="auto", cmap=cm.jet)
-    plt.subplot(122)
-    plt.title("Soft attention window", fontsize=20)
-    plt.xlabel("One-hot vector", fontsize=15)
-    plt.ylabel("Time steps", fontsize=15)
-    plt.imshow(windows, interpolation="nearest", aspect="auto", cmap=cm.jet)
-    plt.show()
+def plot_phi_and_window(phis: torch.Tensor, windows: torch.Tensor) -> Figure:
+    fig, axes = plt.subplots(1, 2)
+    plot = axes[0].imshow(phis, interpolation="nearest", aspect="auto", cmap=cm.jet)
+    axes[0].set_title("Phis")
+    axes[0].set_xlabel("Transcription #")
+    axes[0].set_ylabel("Time steps")
+    cbar = fig.colorbar(plot, ax=axes[0])
+    cbar.minorticks_on()
+
+    plot = axes[1].imshow(windows, interpolation="nearest", aspect="auto", cmap=cm.jet)
+    axes[1].set_title("Soft attention window")
+    axes[1].set_xlabel("One-hot vector")
+    axes[1].set_ylabel("Time steps")
+    cbar = fig.colorbar(plot, ax=axes[1])
+    cbar.minorticks_on()
+    fig.tight_layout()
+    return fig

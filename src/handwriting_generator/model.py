@@ -1,23 +1,33 @@
+import matplotlib.pyplot as plt
 import numpy as np
 import pytorch_lightning as pl
 import torch
+import torch.distributions
+from pytorch_lightning.core.mixins import HyperparametersMixin
 from torch.nn.modules import LSTM
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from handwriting_generator.loss import HandwritingLoss
 from handwriting_generator.modules import GaussianWindow, MixtureDensityNetwork
+from handwriting_generator.utils import (
+    batch_index_select,
+    plot_phi_and_window,
+    plot_strokes,
+)
 
 __all__ = ["HandwritingGenerator"]
 
 
-class HandwritingGenerator(pl.LightningModule):
+class HandwritingGenerator(pl.LightningModule, HyperparametersMixin):
     def __init__(
         self,
         alphabet_size: int,
-        hidden_size: int,
-        n_window_components: int,
-        n_mixture_components: int,
+        hidden_size: int = 200,
+        n_window_components: int = 10,
+        n_mixture_components: int = 20,
         *,
         learning_rate: float = 1e-4,
+        probability_bias: float = 1.0,
     ):
         super(HandwritingGenerator, self).__init__()
         self.alphabet_size = alphabet_size
@@ -25,6 +35,9 @@ class HandwritingGenerator(pl.LightningModule):
         self.n_window_components = n_window_components
         self.n_mixture_components = n_mixture_components
         self.learning_rate = learning_rate
+        self.probability_bias = probability_bias
+
+        self.save_hyperparameters()
 
         # First LSTM layer, takes as input a tuple (x, y, eol)
         self.lstm1_layer = LSTM(input_size=3, hidden_size=hidden_size, batch_first=True)
@@ -56,49 +69,75 @@ class HandwritingGenerator(pl.LightningModule):
         # Loss function
         self.loss = HandwritingLoss()
 
-    def forward(self, strokes, onehot, bias=None):
+    def forward(
+        self,
+        strokes,
+        onehot,
+        strokes_lengths: torch.Tensor,
+        onehot_lengths: torch.Tensor | None = None,
+        *,
+        bias: torch.Tensor | None = None,
+        hidden: tuple[torch.Tensor, ...] | None = None,
+    ):
+        if hidden is None:
+            hidden = (None, None, None)
+        hidden1, hidden2, hidden3 = hidden
         # First LSTM Layer
-        input_ = strokes
-        output1, _ = self.lstm1_layer(input_)
-        # Gaussian Window Layer
-        window, phi = self.window_layer(output1, onehot)
-        # Second LSTM Layer
-        output2, _ = self.lstm2_layer(
-            torch.cat((strokes, output1, window), dim=2),
+        input_ = pack_padded_sequence(
+            strokes, strokes_lengths, batch_first=True, enforce_sorted=False
         )
+        out, hidden1 = self.lstm1_layer(input_, hidden1)
+        out, _ = pad_packed_sequence(out, batch_first=True)
+        # Gaussian Window Layer
+        window, phi = self.window_layer(out, onehot)
+        # Second LSTM Layer
+        out = torch.cat((strokes, out, window), dim=2)
+        out = pack_padded_sequence(
+            out, strokes_lengths, batch_first=True, enforce_sorted=False
+        )
+        out, hidden2 = self.lstm2_layer(out, hidden2)
         # Third LSTM Layer
-        output3, _ = self.lstm3_layer(output2)
+        out, hidden3 = self.lstm3_layer(out, hidden3)
+        out, _ = pad_packed_sequence(out, batch_first=True)
         # MixtureDensityNetwork Layer
-        eos, pi, mu1, mu2, sigma1, sigma2, rho = self.output_layer(output3, bias)
-        return (eos, pi, mu1, mu2, sigma1, sigma2, rho), (window, phi)
+        eos, pi, mu1, mu2, sigma1, sigma2, rho = self.output_layer(out, bias)
+        return (
+            (eos, pi, mu1, mu2, sigma1, sigma2, rho),
+            (window, phi),
+            (hidden1, hidden2, hidden3),
+        )
 
     @staticmethod
-    def sample_bivariate_gaussian(pi, mu1, mu2, sigma1, sigma2, rho):
+    def sample_point(eos, pi, mu1, mu2, sigma1, sigma2, rho):
         # Pick distribution from the MixtureDensityNetwork
-        p = pi.data[0, 0, :].numpy()
-        idx = np.random.choice(p.shape[0], p=p)
-        m1 = mu1.data[0, 0, idx]
-        m2 = mu2.data[0, 0, idx]
-        s1 = sigma1.data[0, 0, idx]
-        s2 = sigma2.data[0, 0, idx]
-        r = rho.data[0, 0, idx]
-        mean = [m1, m2]
-        covariance = [[s1**2, r * s1 * s2], [r * s1 * s2, s2**2]]
-        Z = torch.autograd.Variable(
-            sigma1.data.new(np.random.multivariate_normal(mean, covariance, 1))
-        ).unsqueeze(0)
-        X = Z[:, :, 0:1]
-        Y = Z[:, :, 1:2]
-        return X, Y
+        indices = torch.distributions.Categorical(pi).sample()
+        m1 = batch_index_select(mu1, dim=1, indices=indices)
+        m2 = batch_index_select(mu2, dim=1, indices=indices)
+        s1 = batch_index_select(sigma1, dim=1, indices=indices)
+        s2 = batch_index_select(sigma2, dim=1, indices=indices)
+        r = batch_index_select(rho, dim=1, indices=indices)
+        mean = torch.cat([m1, m2], dim=1)
+        covariance = torch.stack(
+            [
+                torch.cat([s1**2, r * s1 * s2], dim=1),
+                torch.cat([r * s1 * s2, s2**2], dim=1),
+            ],
+            dim=2,
+        )
+        Z = torch.distributions.MultivariateNormal(mean, covariance).sample()
+        x = Z[:, [0]]
+        y = Z[:, [1]]
+        eos = torch.distributions.Bernoulli(eos).sample()[:, :, 0]
+        return x, y, eos
 
-    def training_step(self, batch, batch_idx):
+    def _step(self, batch, batch_idx):
         # Split data tuple
-        strokes, onehot, strokes_lens, onehot_lengths = batch
-        # Move inputs to correct device
-        # onehot, strokes = onehot.to(self.device), strokes.to(self.device)
+        strokes, onehot, strokes_lengths, onehot_lengths, _ = batch
         # Main Model Forward Step
-        (eos, pi, mu1, mu2, sigma1, sigma2, rho), _ = self(strokes, onehot)
-
+        (eos, pi, mu1, mu2, sigma1, sigma2, rho), (window, phi), _ = self(
+            strokes, onehot, strokes_lengths, onehot_lengths
+        )
+        # Compute loss
         loss = self.loss(
             eos[:, :-1],
             pi[:, :-1],
@@ -109,33 +148,67 @@ class HandwritingGenerator(pl.LightningModule):
             rho[:, :-1],
             torch.roll(strokes, -1, dims=1)[:, :-1],
         ) / strokes.size(1)
+        return loss, (eos, pi, mu1, mu2, sigma1, sigma2, rho), (window, phi)
+
+    def training_step(self, batch, batch_idx):
+        loss, _, _ = self._step(batch, batch_idx)
         self.log("train_loss", loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        val_loss = self.training_step(batch, batch_idx)
-        self.log("val_loss", val_loss)
-
-    def num_parameters(self):
-        num = 0
-        for weight in self.parameters():
-            num = num + weight.numel()
-        return num
-
-    @classmethod
-    def load_model(cls, parameters: dict, state_dict: dict):
-        model = cls(**parameters)
-        model.load_state_dict(state_dict)
-        return model
-
-    def __deepcopy__(self, *args, **kwargs):
-        model = HandwritingGenerator(
-            self.alphabet_size,
-            self.hidden_size,
-            self.n_window_components,
-            self.n_mixture_components,
+        with torch.no_grad():
+            loss, _, (window, phi) = self._step(batch, batch_idx)
+        self.log("val_loss", loss)
+        idx = 0
+        fig = plot_phi_and_window(phi[idx].cpu().numpy(), window[idx].cpu().numpy())
+        self.logger.experiment.add_figure(
+            f"val_phi_and_window_{batch_idx}_{idx}", fig, self.global_step
         )
-        return model
+
+    def test_step(self, batch, batch_idx):
+        with torch.no_grad():
+            # Split data tuple
+            strokes, onehot, _, _, transcriptions = batch
+            strokes_lengths = [1] * strokes.shape[0]
+            onehot_lengths = [1] * onehot.shape[0]
+            # Main Model Forward Step
+            generated_points = []
+            input_ = strokes[:, :1, :]
+            finish = False
+            counter = 0
+            hidden = None
+            while not finish and counter <= 1000:
+                counter += 1
+                (eos, pi, mu1, mu2, sigma1, sigma2, rho), (window, phi), hidden = self(
+                    input_,
+                    onehot,
+                    strokes_lengths,
+                    onehot_lengths,
+                    bias=self.probability_bias,
+                    hidden=hidden,
+                )
+                finish = phi[0, 0, -1].ge(torch.max(phi[0, 0, :])).item()
+                x, y, eos = self.sample_point(eos, pi, mu1, mu2, sigma1, sigma2, rho)
+                input_ = torch.stack((x, y, eos), dim=2)
+                generated_points.append(input_)
+            generated_strokes = (
+                torch.cat((strokes[:, 0:1], *generated_points), dim=1).cpu().numpy()
+            )
+        # Plot Strokes
+        for i in range(strokes.shape[0]):
+            fig, axes = plt.subplots(2, 1)
+            plot_strokes(
+                strokes[i].cpu().numpy(), ax=axes[0], transcription=transcriptions[i]
+            )
+            plot_strokes(
+                generated_strokes[i], ax=axes[1], transcription=transcriptions[i]
+            )
+            fig.tight_layout()
+            self.logger.experiment.add_figure(
+                f"ground_truth_and_generated_strokes_{batch_idx}_{i}",
+                fig,
+                self.global_step,
+            )
 
     def configure_optimizers(self):
         optimizer = torch.optim.RMSprop(self.parameters(), lr=self.learning_rate)

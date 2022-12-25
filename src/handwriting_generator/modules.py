@@ -95,7 +95,7 @@ class MixtureDensityNetwork(Module):
         self, input_: torch.Tensor, bias: torch.Tensor | None = None
     ) -> tuple[torch.Tensor, ...]:
         mixture_parameters = self.parameter_layer(input_)
-        eos_hat = mixture_parameters[:, :, 0:1]
+        eos_hat = mixture_parameters[:, :, :1]
         pi_hat, mu1_hat, mu2_hat, sigma1_hat, sigma2_hat, rho_hat = torch.chunk(
             mixture_parameters[:, :, 1:], 6, dim=2
         )
