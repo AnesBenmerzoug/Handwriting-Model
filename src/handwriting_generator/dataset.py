@@ -103,7 +103,7 @@ class IAMDataModule(pl.LightningDataModule):
         for key in track(line_strokes.keys()):
             stroke_set = line_strokes[key]
             transcription = transcriptions[key]
-            if len(transcription) <= 10:
+            if len(transcription) <= 5:
                 logger.info(f"Transcription is too short: '{transcription}'")
                 continue
             elif len(transcription) >= 50:
@@ -111,13 +111,6 @@ class IAMDataModule(pl.LightningDataModule):
                 continue
 
             strokes_array = convert_stroke_set_to_array(stroke_set)
-            strokes_array = np.concatenate(
-                [
-                    strokes_array[:, :2] / np.std(strokes_array[:, :2], axis=0),
-                    strokes_array[:, [2]],
-                ],
-                axis=1,
-            )
             strokes_array_list.append(strokes_array)
 
             transcription = "".join(

@@ -13,7 +13,7 @@ from torch.nn.utils.rnn import pad_sequence
 
 __all__ = [
     "plot_strokes",
-    "plot_phi_and_window",
+    "plot_window_weights",
     "load_line_strokes",
     "load_transcriptions",
     "convert_stroke_set_to_array",
@@ -104,31 +104,37 @@ def filter_line_strokes_and_transcriptions(
 
 
 def convert_stroke_set_to_array(stroke_set: list[list[tuple[int, int]]]) -> np.ndarray:
+    """Converts stroke sets to arrays and at the same time remove the trend from y-axis values.
+    The returned arrays contains the first order difference of the x and y values instead of the raw values.
+    """
     n_point = sum(map(len, stroke_set))
     strokes_array = np.zeros((n_point, 3))
-
-    prev_x = 0
-    prev_y = 0
-
-    counter = 0
+    counter = -1
 
     for strokes in stroke_set:
         for i, point in enumerate(strokes):
-            x, y = int(point[0]), int(point[1])
-            # Compute the relative distance between current and previous point
-            strokes_array[counter, 0] = x - prev_x
-            strokes_array[counter, 1] = y - prev_y
-            # Store current coordinates for use in next iteration
-            prev_x, prev_y = x, y
-            # end of stroke
-            if i == (len(strokes) - 1):
-                strokes_array[counter, 2] = 1
-            else:
-                strokes_array[counter, 2] = 0
             counter += 1
+            x, y = int(point[0]), int(point[1])
+            strokes_array[counter, 0] = x
+            strokes_array[counter, 1] = y
+            strokes_array[counter, 2] = 0
+        # end of stroke
+        strokes_array[counter, 2] = 1
+
+    # Remove trend on the y-axis
+    X = np.arange(0, len(strokes_array))
+    z = np.polyfit(X, strokes_array[:, 1], deg=1)
+    y_trend = np.polyval(z, X)
+    strokes_array[:, 1] -= y_trend
+
+    # Normalize x of y values
+    strokes_array[:, :2] = strokes_array[:, :2] / np.max(strokes_array[:, :2])
+
+    # Replace the x and y values with their respective 1st order difference
+    strokes_array[:, :2] = np.diff(strokes_array[:, :2], prepend=0, axis=0)
 
     # Insert the point (0, 0, 1) at the beginning
-    strokes_array = np.insert(strokes_array, 0, [0, 0, 1], axis=0)
+    strokes_array = np.insert(strokes_array, 0, [0.0, 0.0, 1.0], axis=0)
     return strokes_array
 
 
@@ -202,20 +208,19 @@ def plot_strokes(
     return ax
 
 
-def plot_phi_and_window(phis: torch.Tensor, windows: torch.Tensor) -> Figure:
-    fig, axes = plt.subplots(1, 2)
-    plot = axes[0].imshow(phis, interpolation="nearest", aspect="auto", cmap=cm.jet)
+def plot_window_weights(
+    strokes: np.ndarray, phi: np.ndarray, transcription: str
+) -> Figure:
+    fig, axes = plt.subplots(2, 1)
+    plot = axes[0].imshow(phi.T, interpolation="nearest", aspect="auto", cmap=cm.jet)
     axes[0].set_title("Phis")
-    axes[0].set_xlabel("Transcription #")
-    axes[0].set_ylabel("Time steps")
-    cbar = fig.colorbar(plot, ax=axes[0])
+    axes[0].set_ylabel(transcription)
+    cax = axes[0].inset_axes([1.02, 0.0, 0.05, 1.0])
+    cbar = fig.colorbar(plot, ax=axes[0], cax=cax)
     cbar.minorticks_on()
 
-    plot = axes[1].imshow(windows, interpolation="nearest", aspect="auto", cmap=cm.jet)
-    axes[1].set_title("Soft attention window")
-    axes[1].set_xlabel("One-hot vector")
-    axes[1].set_ylabel("Time steps")
-    cbar = fig.colorbar(plot, ax=axes[1])
-    cbar.minorticks_on()
+    plot_strokes(strokes, ax=axes[1])
+    axes[1].set_axis_off()
+
     fig.tight_layout()
     return fig

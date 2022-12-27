@@ -27,21 +27,22 @@ class GaussianWindow(Module):
         super(GaussianWindow, self).__init__()
         self.input_size = input_size
         self.n_components = n_components
-        self.parameter_layer = Linear(
-            in_features=input_size, out_features=3 * n_components
-        )
+        self.alpha_layer = Linear(in_features=input_size, out_features=n_components)
+        self.beta_layer = Linear(in_features=input_size, out_features=n_components)
+        self.kappa_layer = Linear(in_features=input_size, out_features=n_components)
 
     def forward(
         self,
         input_: torch.Tensor,
         onehot: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        abk_hats = self.parameter_layer(input_)
-        abk = torch.exp(abk_hats).unsqueeze(len(abk_hats.shape))
-        alpha, beta, kappa_hat = abk.chunk(3, dim=2)
-        kappa_hat_shifted = torch.roll(kappa_hat, -1, dims=1)
-        kappa_hat_shifted[:, 0] = 0
-        kappa = kappa_hat + kappa_hat_shifted
+        alpha_hat = self.alpha_layer(input_).unsqueeze(len(input_.shape))
+        beta_hat = self.beta_layer(input_).unsqueeze(len(input_.shape))
+        kappa_hat = self.kappa_layer(input_).unsqueeze(len(input_.shape))
+        alpha = torch.exp(alpha_hat)
+        beta = torch.exp(beta_hat)
+        kappa = torch.exp(kappa_hat)
+        kappa = torch.cumsum(kappa, dim=1)
         u = torch.arange(0, onehot.size(1)).to(input_.device)
         phi = torch.sum(alpha * torch.exp(-beta * ((kappa - u) ** 2)), dim=2)
         window = torch.matmul(phi, onehot)
@@ -69,7 +70,7 @@ class MixtureDensityNetwork(Module):
 
         \begin{array}{lll}
         \hat{y}_t &=&
-        \left( \hat{e}_t, \left\{ \hat{w}^j_t, \hat{\mu}^j_t, \hat{\sigma}^j_t, \hat{\rho}^j_t \right\}^{M}_{j=1} \right) \\
+        \left( \hat{e}_t, \left\{ \hat{\pi}^j_t, \hat{\mu}^j_t, \hat{\sigma}^j_t, \hat{\rho}^j_t \right\}^{M}_{j=1} \right) \\
         &=& b_y + \sum_{n=1}^{N} W_{h^ny}h^n_t
         \end{array}
 
@@ -99,7 +100,7 @@ class MixtureDensityNetwork(Module):
         pi_hat, mu1_hat, mu2_hat, sigma1_hat, sigma2_hat, rho_hat = torch.chunk(
             mixture_parameters[:, :, 1:], 6, dim=2
         )
-        eos = torch.sigmoid(-eos_hat)
+        eos = torch.sigmoid(eos_hat)
         mu1 = mu1_hat
         mu2 = mu2_hat
         rho = torch.tanh(rho_hat)

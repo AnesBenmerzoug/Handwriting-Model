@@ -11,6 +11,9 @@ from pytorch_lightning.callbacks import (
     RichModelSummary,
     RichProgressBar,
 )
+from pytorch_lightning.plugins.precision import (
+    NativeMixedPrecisionPlugin as MixedPrecisionPlugin,
+)
 from rich.logging import RichHandler
 
 from handwriting_generator.constants import OUTPUT_DIR
@@ -26,18 +29,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-pl.seed_everything(16)
+pl.seed_everything(16, workers=True)
 # Ensure that all operations are deterministic on GPU (if used) for reproducibility
 torch.backends.cudnn.determinstic = True
 torch.backends.cudnn.benchmark = False
 
 
 @click.command()
-@click.option("--n-epochs", type=int, default=100)
+@click.option("--n-epochs", type=int, default=200)
 @click.option("--batch-size", type=int, default=64)
 @click.option("--train/--no-train", is_flag=True, default=True)
-@click.option("--gpu/--no-gpu", is_flag=True, default=True)
-def main(n_epochs: int, batch_size: int, train: bool, gpu: bool):
+@click.option("--auto-lr-find/--no-auto-lr-find", is_flag=True, default=False)
+@click.option("--use-gpu/--no-use-gpu", is_flag=True, default=True)
+def main(
+    n_epochs: int, batch_size: int, train: bool, auto_lr_find: bool, use_gpu: bool
+):
+    use_gpu = torch.cuda.is_available() and use_gpu
     # To have a more verbose output in case of an exception
     faulthandler.enable()
 
@@ -56,15 +63,15 @@ def main(n_epochs: int, batch_size: int, train: bool, gpu: bool):
             map_location=lambda storage, loc: storage,
         )
 
-    trainer = pl.Trainer(
+    kwargs = dict(
         default_root_dir=OUTPUT_DIR,
         max_epochs=n_epochs,
-        auto_lr_find=True,
+        auto_lr_find=auto_lr_find,
         accelerator="auto",
-        devices=1 if torch.cuda.is_available() else None,
         gradient_clip_val=0.5,
+        track_grad_norm=2,
         callbacks=[
-            LearningRateMonitor("epoch"),
+            LearningRateMonitor("epoch", log_momentum=True),
             ModelCheckpoint(
                 save_last=True,
                 save_top_k=2,
@@ -75,8 +82,20 @@ def main(n_epochs: int, batch_size: int, train: bool, gpu: bool):
             RichProgressBar(refresh_rate=10),
         ],
         logger=pl_loggers.TensorBoardLogger(save_dir=OUTPUT_DIR),
-        profiler="simple",
+        deterministic=True,
     )
+
+    if use_gpu:
+        kwargs.update(
+            dict(
+                devices=1,
+                plugins=[
+                    MixedPrecisionPlugin(precision=16, device="cuda"),
+                ],
+            )
+        )
+
+    trainer = pl.Trainer(**kwargs)
 
     if train:
         trainer.tune(model=model, datamodule=datamodule)

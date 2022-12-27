@@ -11,8 +11,8 @@ from handwriting_generator.loss import HandwritingLoss
 from handwriting_generator.modules import GaussianWindow, MixtureDensityNetwork
 from handwriting_generator.utils import (
     batch_index_select,
-    plot_phi_and_window,
     plot_strokes,
+    plot_window_weights,
 )
 
 __all__ = ["HandwritingGenerator"]
@@ -26,7 +26,7 @@ class HandwritingGenerator(pl.LightningModule, HyperparametersMixin):
         n_window_components: int = 10,
         n_mixture_components: int = 20,
         *,
-        learning_rate: float = 1e-4,
+        learning_rate: float = 1e-2,
         probability_bias: float = 1.0,
     ):
         super(HandwritingGenerator, self).__init__()
@@ -52,13 +52,6 @@ class HandwritingGenerator(pl.LightningModule, HyperparametersMixin):
             input_size=3 + hidden_size + alphabet_size + 1,
             hidden_size=hidden_size,
             batch_first=True,
-        )
-
-        # Third LSTM layer, takes as input the concatenation of the output of the first LSTM layer,
-        # the output of the second LSTM layer
-        # and the output of the Window layer
-        self.lstm3_layer = LSTM(
-            input_size=hidden_size, hidden_size=hidden_size, batch_first=True
         )
 
         # Mixture Density Network Layer
@@ -96,8 +89,6 @@ class HandwritingGenerator(pl.LightningModule, HyperparametersMixin):
             out, strokes_lengths, batch_first=True, enforce_sorted=False
         )
         out, hidden2 = self.lstm2_layer(out, hidden2)
-        # Third LSTM Layer
-        out, hidden3 = self.lstm3_layer(out, hidden3)
         out, _ = pad_packed_sequence(out, batch_first=True)
         # MixtureDensityNetwork Layer
         eos, pi, mu1, mu2, sigma1, sigma2, rho = self.output_layer(out, bias)
@@ -138,16 +129,7 @@ class HandwritingGenerator(pl.LightningModule, HyperparametersMixin):
             strokes, onehot, strokes_lengths, onehot_lengths
         )
         # Compute loss
-        loss = self.loss(
-            eos[:, :-1],
-            pi[:, :-1],
-            mu1[:, :-1],
-            mu2[:, :-1],
-            sigma1[:, :-1],
-            sigma2[:, :-1],
-            rho[:, :-1],
-            torch.roll(strokes, -1, dims=1)[:, :-1],
-        ) / strokes.size(1)
+        loss = self.loss(eos, pi, mu1, mu2, sigma1, sigma2, rho, strokes)
         return loss, (eos, pi, mu1, mu2, sigma1, sigma2, rho), (window, phi)
 
     def training_step(self, batch, batch_idx):
@@ -159,8 +141,14 @@ class HandwritingGenerator(pl.LightningModule, HyperparametersMixin):
         with torch.no_grad():
             loss, _, (window, phi) = self._step(batch, batch_idx)
         self.log("val_loss", loss)
+        strokes, _, strokes_lengths, _, transcriptions = batch
         idx = 0
-        fig = plot_phi_and_window(phi[idx].cpu().numpy(), window[idx].cpu().numpy())
+        length = strokes_lengths[idx]
+        fig = plot_window_weights(
+            strokes[idx][:length].cpu().numpy(),
+            phi[idx][:length].cpu().numpy(),
+            transcriptions[idx],
+        )
         self.logger.experiment.add_figure(
             f"val_phi_and_window_{batch_idx}_{idx}", fig, self.global_step
         )
@@ -211,5 +199,19 @@ class HandwritingGenerator(pl.LightningModule, HyperparametersMixin):
             )
 
     def configure_optimizers(self):
-        optimizer = torch.optim.RMSprop(self.parameters(), lr=self.learning_rate)
-        return optimizer
+        optimizer = torch.optim.SGD(
+            self.parameters(), lr=self.learning_rate, momentum=1e-2
+        )
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            eta_min=self.learning_rate * 1e-3,
+            T_max=self.trainer.estimated_stepping_batches // 2,
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "step",
+                "frequency": 1,
+            },
+        }
