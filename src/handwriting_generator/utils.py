@@ -140,14 +140,27 @@ def convert_stroke_set_to_array(stroke_set: list[list[tuple[int, int]]]) -> np.n
 
 def collate_fn(
     batch: list[tuple[torch.Tensor, torch.Tensor]]
-) -> tuple[torch.Tensor, torch.Tensor, list[int], list[int], list[str]]:
+) -> tuple[
+    torch.Tensor, torch.Tensor, np.ndarray[np.int_], np.ndarray[np.int_], list[str]
+]:
     strokes, onehot, transcriptions = zip(*batch)
 
-    strokes_lengths = [len(x) for x in strokes]
-    onehot_lengths = [len(x) for x in onehot]
+    strokes_lengths = torch.as_tensor([len(x) for x in strokes], dtype=torch.int64)
+    onehot_lengths = torch.as_tensor([len(x) for x in onehot], dtype=torch.int64)
 
     strokes_pad = pad_sequence(strokes, batch_first=True, padding_value=0).float()
     onehot_pad = pad_sequence(onehot, batch_first=True, padding_value=0).float()
+
+    # Sort all tensors by descending strokes lengths
+    strokes_lengths, sorted_indices = torch.sort(strokes_lengths, descending=True)
+    strokes_pad = strokes_pad.index_select(0, sorted_indices)
+    onehot_pad = onehot_pad.index_select(0, sorted_indices)
+    onehot_lengths = onehot_lengths.index_select(0, sorted_indices)
+
+    # Convert length tensors to numpy arrays
+    # to avoid errors with pad_packed_sequence and pack_padded_sequence
+    strokes_lengths = strokes_lengths.numpy()
+    onehot_lengths = onehot_lengths.numpy()
 
     return strokes_pad, onehot_pad, strokes_lengths, onehot_lengths, transcriptions
 
