@@ -1,5 +1,4 @@
 import logging
-import os
 import pickle
 import string
 
@@ -59,22 +58,29 @@ class IAMDataset(Dataset):
 
 class IAMDataModule(pl.LightningDataModule):
     def __init__(
-        self, *, train_size: float = 0.9, batch_size: int = 32, num_workers: int = 0
+        self,
+        *,
+        train_size: float = 0.8,
+        test_size: float = 0.1,
+        batch_size: int = 32,
+        num_workers: int = 0,
     ):
         super().__init__()
         self.batch_size = batch_size
         self.train_size = train_size
+        self.test_size = test_size
+        self.val_size = 1 - (self.train_size + self.test_size)
         self.num_workers = num_workers
         if self.train_size < 0 or self.train_size >= 1.0:
             raise ValueError("train_size should be in the range (0, 1)")
 
-        # unknown character + space + some punctuation marks + lowercase letters + digits
+        # unknown character + space + some punctuation marks + lowercase letters + uppercase letters
         self.unknown_character = "^"
-        self.alphabet = "".join(
-            [self.unknown_character]
-            + [" "]
-            + [".,\"'?!:()"]
-            + [c for c in string.ascii_lowercase + string.digits]
+        self.alphabet = (
+            self.unknown_character
+            + ' .,"'
+            + string.ascii_lowercase
+            + string.ascii_uppercase
         )
 
         if not (TRANSCRIPTIONS_DIR.exists() and LINE_STROKES_DIR.exists()):
@@ -114,8 +120,7 @@ class IAMDataModule(pl.LightningDataModule):
             strokes_array_list.append(strokes_array)
 
             transcription = "".join(
-                c if c in self.alphabet else self.alphabet[0]
-                for c in transcription.lower()
+                c if c in self.alphabet else self.alphabet[0] for c in transcription
             )
             onehot = np.zeros(
                 shape=(len(transcription), len(self.alphabet) + 1), dtype=np.uint8
@@ -133,9 +138,12 @@ class IAMDataModule(pl.LightningDataModule):
 
     def setup(self, stage: str):
         dataset_full = IAMDataset(self.alphabet)
-        subsets = random_split(dataset_full, [self.train_size, 1 - self.train_size])
+        subsets = random_split(
+            dataset_full, [self.train_size, self.val_size, self.test_size]
+        )
         self.train_dataset = subsets[0]
         self.val_dataset = subsets[1]
+        self.test_dataset = subsets[2]
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
