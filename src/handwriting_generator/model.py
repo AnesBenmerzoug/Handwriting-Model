@@ -53,6 +53,14 @@ class HandwritingGenerator(pl.LightningModule, HyperparametersMixin):
             hidden_size=hidden_size,
             batch_first=True,
         )
+        # Third LSTM layer, takes as input the concatenation of the input,
+        # the output of the second LSTM layer
+        # and the output of the Window layer
+        self.lstm3_layer = LSTM(
+            input_size=3 + hidden_size + alphabet_size + 1,
+            hidden_size=hidden_size,
+            batch_first=True,
+        )
 
         # Mixture Density Network Layer
         self.output_layer = MixtureDensityNetwork(
@@ -76,19 +84,27 @@ class HandwritingGenerator(pl.LightningModule, HyperparametersMixin):
             hidden = (None, None, None)
         hidden1, hidden2, hidden3 = hidden
         # First LSTM Layer
-        input_ = pack_padded_sequence(
-            strokes, strokes_lengths, batch_first=True, enforce_sorted=False
-        )
+        input_ = pack_padded_sequence(strokes, strokes_lengths, batch_first=True)
         out, hidden1 = self.lstm1_layer(input_, hidden1)
         out, _ = pad_packed_sequence(out, batch_first=True)
         # Gaussian Window Layer
         window, phi = self.window_layer(out, onehot)
+        # Mask Phi values outside of length
+        phi_mask = torch.zeros_like(phi, dtype=torch.bool)
+        for i, length in enumerate(strokes_lengths):
+            phi_mask[i, length:] = True
+        for i, length in enumerate(onehot_lengths):
+            phi_mask[i, :, length:] = True
+        phi = phi.masked_fill(phi_mask, 0.0)
         # Second LSTM Layer
         out = torch.cat((strokes, out, window), dim=2)
-        out = pack_padded_sequence(
-            out, strokes_lengths, batch_first=True, enforce_sorted=False
-        )
+        out = pack_padded_sequence(out, strokes_lengths, batch_first=True)
         out, hidden2 = self.lstm2_layer(out, hidden2)
+        out, _ = pad_packed_sequence(out, batch_first=True)
+        # Third LSTM Layer
+        out = torch.cat((strokes, out, window), dim=2)
+        out = pack_padded_sequence(out, strokes_lengths, batch_first=True)
+        out, hidden3 = self.lstm3_layer(out, hidden3)
         out, _ = pad_packed_sequence(out, batch_first=True)
         # MixtureDensityNetwork Layer
         eos, pi, mu1, mu2, sigma1, sigma2, rho = self.output_layer(out, bias)
