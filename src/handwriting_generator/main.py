@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 pl.seed_everything(16, workers=True)
 # Ensure that all operations are deterministic on GPU (if used) for reproducibility
-torch.backends.cudnn.determinstic = True
+# torch.backends.cudnn.determinstic = True
 torch.backends.cudnn.benchmark = False
 
 
@@ -68,7 +68,8 @@ def main(
         max_epochs=n_epochs,
         auto_lr_find=auto_lr_find,
         accelerator="auto",
-        gradient_clip_val=0.5,
+        gradient_clip_val=0.3,
+        gradient_clip_algorithm="value",
         track_grad_norm=2,
         callbacks=[
             LearningRateMonitor("epoch", log_momentum=True),
@@ -82,7 +83,6 @@ def main(
             RichProgressBar(refresh_rate=10),
         ],
         logger=pl_loggers.TensorBoardLogger(save_dir=OUTPUT_DIR),
-        deterministic=True,
     )
 
     if use_gpu:

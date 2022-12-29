@@ -22,11 +22,11 @@ class HandwritingGenerator(pl.LightningModule, HyperparametersMixin):
     def __init__(
         self,
         alphabet_size: int,
-        hidden_size: int = 200,
+        hidden_size: int = 400,
         n_window_components: int = 10,
         n_mixture_components: int = 20,
         *,
-        learning_rate: float = 1e-2,
+        learning_rate: float = 1e-3,
         probability_bias: float = 1.0,
     ):
         super(HandwritingGenerator, self).__init__()
@@ -121,6 +121,41 @@ class HandwritingGenerator(pl.LightningModule, HyperparametersMixin):
         eos = torch.distributions.Bernoulli(eos).sample()[:, :, 0]
         return x, y, eos
 
+    def _generate_strokes_and_window_weights(
+        self, batch
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[str]]:
+        # Split data tuple
+        strokes, onehot, _, _, transcriptions = batch
+        strokes_lengths = [1] * strokes.shape[0]
+        onehot_lengths = [1] * onehot.shape[0]
+        # Main Model Forward Step
+        generated_points = []
+        input_ = strokes[:, :1, :]
+        finish = False
+        counter = 0
+        hidden = None
+        while not finish and counter <= 1000:
+            counter += 1
+            (eos, pi, mu1, mu2, sigma1, sigma2, rho), (window, phi), hidden = self(
+                input_,
+                onehot,
+                strokes_lengths,
+                onehot_lengths,
+                bias=self.probability_bias,
+                hidden=hidden,
+            )
+            finish = phi[0, 0, -1].ge(torch.max(phi[0, 0, :])).item()
+            x, y, eos = self.sample_point(eos, pi, mu1, mu2, sigma1, sigma2, rho)
+            input_ = torch.stack((x, y, eos), dim=2)
+            generated_points.append(input_)
+        generated_strokes = torch.cat((strokes[:, 0:1], *generated_points), dim=1)
+        return (
+            strokes.cpu().numpy(),
+            phi.cpu().numpy(),
+            generated_strokes.cpu().numpy(),
+            transcriptions,
+        )
+
     def _step(self, batch, batch_idx):
         # Split data tuple
         strokes, onehot, strokes_lengths, onehot_lengths, _ = batch
@@ -150,68 +185,55 @@ class HandwritingGenerator(pl.LightningModule, HyperparametersMixin):
             transcriptions[idx],
         )
         self.logger.experiment.add_figure(
-            f"val_phi_and_window_{batch_idx}_{idx}", fig, self.global_step
+            f"val_window_weights_{batch_idx}_{idx}", fig, self.global_step
+        )
+        # Plot Strokes
+        generated_strokes, phi, strokes, transcriptions = self._generate_strokes(batch)
+        # Plot Strokes
+        idx = 0
+        fig, axes = plt.subplots(2, 1)
+        strokes_array = strokes[idx]
+        generated_strokes_array = generated_strokes[idx]
+        transcription = transcriptions[idx]
+        plot_strokes(strokes_array, ax=axes[0], transcription=transcription)
+        plot_strokes(generated_strokes_array, ax=axes[1], transcription=transcription)
+        fig.tight_layout()
+        self.logger.experiment.add_figure(
+            f"val_ground_truth_and_generated_strokes_{batch_idx}_{idx}",
+            fig,
+            self.global_step,
         )
 
     def test_step(self, batch, batch_idx):
-        with torch.no_grad():
-            # Split data tuple
-            strokes, onehot, _, _, transcriptions = batch
-            strokes_lengths = [1] * strokes.shape[0]
-            onehot_lengths = [1] * onehot.shape[0]
-            # Main Model Forward Step
-            generated_points = []
-            input_ = strokes[:, :1, :]
-            finish = False
-            counter = 0
-            hidden = None
-            while not finish and counter <= 1000:
-                counter += 1
-                (eos, pi, mu1, mu2, sigma1, sigma2, rho), (window, phi), hidden = self(
-                    input_,
-                    onehot,
-                    strokes_lengths,
-                    onehot_lengths,
-                    bias=self.probability_bias,
-                    hidden=hidden,
-                )
-                finish = phi[0, 0, -1].ge(torch.max(phi[0, 0, :])).item()
-                x, y, eos = self.sample_point(eos, pi, mu1, mu2, sigma1, sigma2, rho)
-                input_ = torch.stack((x, y, eos), dim=2)
-                generated_points.append(input_)
-            generated_strokes = (
-                torch.cat((strokes[:, 0:1], *generated_points), dim=1).cpu().numpy()
-            )
+        generated_strokes, phi, strokes, transcriptions = self._generate_strokes(batch)
         # Plot Strokes
-        for i in range(strokes.shape[0]):
-            fig, axes = plt.subplots(2, 1)
-            plot_strokes(
-                strokes[i].cpu().numpy(), ax=axes[0], transcription=transcriptions[i]
-            )
-            plot_strokes(
-                generated_strokes[i], ax=axes[1], transcription=transcriptions[i]
-            )
-            fig.tight_layout()
-            self.logger.experiment.add_figure(
-                f"ground_truth_and_generated_strokes_{batch_idx}_{i}",
-                fig,
-                self.global_step,
-            )
+        idx = 0
+        fig, axes = plt.subplots(2, 1)
+        strokes_array = strokes[idx]
+        generated_strokes_array = generated_strokes[idx]
+        window_weights = phi[idx]
+        transcription = transcriptions[idx]
+        plot_strokes(strokes_array, ax=axes[0], transcription=transcription)
+        plot_strokes(generated_strokes_array, ax=axes[1], transcription=transcription)
+        fig.tight_layout()
+        self.logger.experiment.add_figure(
+            f"test_ground_truth_and_generated_strokes_{batch_idx}_{idx}",
+            fig,
+            self.global_step,
+        )
+        # Plot window weights
+        fig = plot_window_weights(strokes_array, window_weights, transcription)
+        self.logger.experiment.add_figure(
+            f"test_window_weights_{batch_idx}_{idx}", fig, self.global_step
+        )
 
     def configure_optimizers(self):
-        optimizer = torch.optim.SGD(
-            self.parameters(), lr=self.learning_rate, momentum=1e-2
-        )
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer,
-            eta_min=self.learning_rate * 1e-3,
-            T_max=self.trainer.estimated_stepping_batches // 2,
+        optimizer = torch.optim.RMSprop(
+            self.parameters(),
+            lr=self.learning_rate,
+            alpha=0.95,
+            weight_decay=1e-4,
         )
         return {
             "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": scheduler,
-                "interval": "step",
-                "frequency": 1,
-            },
         }
