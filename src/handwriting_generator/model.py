@@ -204,7 +204,12 @@ class HandwritingGenerator(pl.LightningModule, HyperparametersMixin):
             f"val_window_weights_{batch_idx}_{idx}", fig, self.global_step
         )
         # Plot Strokes
-        generated_strokes, phi, strokes, transcriptions = self._generate_strokes(batch)
+        (
+            generated_strokes,
+            phi,
+            strokes,
+            transcriptions,
+        ) = self._generate_strokes_and_window_weights(batch)
         # Plot Strokes
         idx = 0
         fig, axes = plt.subplots(2, 1)
@@ -221,7 +226,12 @@ class HandwritingGenerator(pl.LightningModule, HyperparametersMixin):
         )
 
     def test_step(self, batch, batch_idx):
-        generated_strokes, phi, strokes, transcriptions = self._generate_strokes(batch)
+        (
+            generated_strokes,
+            phi,
+            strokes,
+            transcriptions,
+        ) = self._generate_strokes_and_window_weights(batch)
         # Plot Strokes
         idx = 0
         fig, axes = plt.subplots(2, 1)
