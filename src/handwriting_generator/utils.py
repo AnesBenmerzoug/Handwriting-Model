@@ -156,6 +156,7 @@ def collate_fn(
     strokes_pad = strokes_pad.index_select(0, sorted_indices)
     onehot_pad = onehot_pad.index_select(0, sorted_indices)
     onehot_lengths = onehot_lengths.index_select(0, sorted_indices)
+    transcriptions = [transcriptions[i] for i in sorted_indices]
 
     # Convert length tensors to numpy arrays
     # to avoid errors with pad_packed_sequence and pack_padded_sequence

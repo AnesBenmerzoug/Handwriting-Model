@@ -166,9 +166,9 @@ class HandwritingGenerator(pl.LightningModule, HyperparametersMixin):
             generated_points.append(input_)
         generated_strokes = torch.cat((strokes[:, 0:1], *generated_points), dim=1)
         return (
-            strokes.cpu().numpy(),
-            phi.cpu().numpy(),
             generated_strokes.cpu().numpy(),
+            phi.cpu().numpy(),
+            strokes.cpu().numpy(),
             transcriptions,
         )
 
@@ -211,7 +211,6 @@ class HandwritingGenerator(pl.LightningModule, HyperparametersMixin):
             transcriptions,
         ) = self._generate_strokes_and_window_weights(batch)
         # Plot Strokes
-        idx = 0
         fig, axes = plt.subplots(2, 1)
         strokes_array = strokes[idx]
         generated_strokes_array = generated_strokes[idx]
