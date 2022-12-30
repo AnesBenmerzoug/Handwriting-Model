@@ -1,10 +1,9 @@
 import matplotlib.pyplot as plt
-import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.distributions
 from pytorch_lightning.core.mixins import HyperparametersMixin
-from torch.nn.modules import LSTM
+from torch.nn.modules import LSTM, Linear, Sequential, Sigmoid
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from handwriting_generator.loss import HandwritingLoss
@@ -63,8 +62,14 @@ class HandwritingGenerator(pl.LightningModule, HyperparametersMixin):
         )
 
         # Mixture Density Network Layer
-        self.output_layer = MixtureDensityNetwork(
+        self.mdn_layer = MixtureDensityNetwork(
             input_size=hidden_size, n_mixtures=n_mixture_components
+        )
+
+        # EOS Layer
+        self.eos_layer = Sequential(
+            Linear(in_features=hidden_size, out_features=1),
+            Sigmoid(),
         )
 
         # Loss function
@@ -107,7 +112,9 @@ class HandwritingGenerator(pl.LightningModule, HyperparametersMixin):
         out, hidden3 = self.lstm3_layer(out, hidden3)
         out, _ = pad_packed_sequence(out, batch_first=True)
         # MixtureDensityNetwork Layer
-        eos, pi, mu1, mu2, sigma1, sigma2, rho = self.output_layer(out, bias)
+        pi, mu1, mu2, sigma1, sigma2, rho = self.mdn_layer(out, bias)
+        # EOS Layer
+        eos = self.eos_layer(out)
         return (
             (eos, pi, mu1, mu2, sigma1, sigma2, rho),
             (window, phi),

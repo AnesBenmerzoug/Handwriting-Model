@@ -89,18 +89,16 @@ class MixtureDensityNetwork(Module):
         self.input_size = input_size
         self.n_mixtures = n_mixtures
         self.parameter_layer = Linear(
-            in_features=input_size, out_features=1 + 6 * n_mixtures
+            in_features=input_size, out_features=6 * n_mixtures
         )
 
     def forward(
         self, input_: torch.Tensor, bias: torch.Tensor | None = None
     ) -> tuple[torch.Tensor, ...]:
         mixture_parameters = self.parameter_layer(input_)
-        eos_hat = mixture_parameters[:, :, :1]
         pi_hat, mu1_hat, mu2_hat, sigma1_hat, sigma2_hat, rho_hat = torch.chunk(
-            mixture_parameters[:, :, 1:], 6, dim=2
+            mixture_parameters, 6, dim=2
         )
-        eos = torch.sigmoid(eos_hat)
         mu1 = mu1_hat
         mu2 = mu2_hat
         rho = torch.tanh(rho_hat)
@@ -109,7 +107,7 @@ class MixtureDensityNetwork(Module):
         pi = torch.softmax(pi_hat * (1 + bias), dim=2)
         sigma1 = torch.exp(sigma1_hat - bias)
         sigma2 = torch.exp(sigma2_hat - bias)
-        return eos, pi, mu1, mu2, sigma1, sigma2, rho
+        return pi, mu1, mu2, sigma1, sigma2, rho
 
     def __repr__(self):
         s = "{name}(input_size={input_size}, n_mixtures={n_mixtures})"
