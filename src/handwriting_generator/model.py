@@ -3,7 +3,7 @@ import pytorch_lightning as pl
 import torch
 import torch.distributions
 from pytorch_lightning.core.mixins import HyperparametersMixin
-from torch.nn.modules import LSTM, Linear, Sequential, Sigmoid
+from torch.nn.modules import LSTM, BatchNorm1d, Linear, Sequential, Sigmoid
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from handwriting_generator.loss import HandwritingLoss
@@ -37,6 +37,10 @@ class HandwritingGenerator(pl.LightningModule, HyperparametersMixin):
         self.probability_bias = probability_bias
 
         self.save_hyperparameters()
+
+        # Batch normalization layer
+        # This is used to standardize the x and y values
+        self.batch_norm = BatchNorm1d(num_features=2)
 
         # First LSTM layer, takes as input a tuple (x, y, eol)
         self.lstm1_layer = LSTM(input_size=3, hidden_size=hidden_size, batch_first=True)
@@ -88,8 +92,16 @@ class HandwritingGenerator(pl.LightningModule, HyperparametersMixin):
         if hidden is None:
             hidden = (None, None, None)
         hidden1, hidden2, hidden3 = hidden
+        # Batch normalization
+        input_ = torch.clone(strokes)
+        assert input_.shape[2] == 3
+        input_ = torch.swapaxes(input_, 1, 2)
+        input_[:, :2] = self.batch_norm(input_[:, :2])
+        assert input_.shape[1] == 3
+        input_ = torch.swapaxes(input_, 1, 2)
         # First LSTM Layer
-        input_ = pack_padded_sequence(strokes, strokes_lengths, batch_first=True)
+        assert input_.shape[2] == 3
+        input_ = pack_padded_sequence(input_, strokes_lengths, batch_first=True)
         out, hidden1 = self.lstm1_layer(input_, hidden1)
         out, _ = pad_packed_sequence(out, batch_first=True)
         # Gaussian Window Layer

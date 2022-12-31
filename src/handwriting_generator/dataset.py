@@ -49,11 +49,10 @@ class IAMDataset(Dataset):
         return self.length
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, str]:
-        return (
-            torch.tensor(self.strokes_array_list[idx]),
-            torch.tensor(self.transcriptions_onehot_list[idx]),
-            self.transcriptions_list[idx],
-        )
+        strokes = torch.tensor(self.strokes_array_list[idx])
+        onehot = torch.tensor(self.transcriptions_onehot_list[idx])
+        transcription = self.transcriptions_list[idx]
+        return strokes, onehot, transcription
 
 
 class IAMDataModule(pl.LightningDataModule):

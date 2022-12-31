@@ -127,9 +127,6 @@ def convert_stroke_set_to_array(stroke_set: list[list[tuple[int, int]]]) -> np.n
     y_trend = np.polyval(z, X)
     strokes_array[:, 1] -= y_trend
 
-    # Normalize x of y values
-    strokes_array[:, :2] = strokes_array[:, :2] / np.max(strokes_array[:, :2])
-
     # Replace the x and y values with their respective 1st order difference
     strokes_array[:, :2] = np.diff(strokes_array[:, :2], prepend=0, axis=0)
 
