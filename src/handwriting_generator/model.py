@@ -3,7 +3,7 @@ import pytorch_lightning as pl
 import torch
 import torch.distributions
 from pytorch_lightning.core.mixins import HyperparametersMixin
-from torch.nn.modules import LSTM, BatchNorm1d, Linear, Sequential, Sigmoid
+from torch.nn.modules import LSTM, BatchNorm1d, Linear, Module, Sequential, Sigmoid
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from handwriting_generator.loss import HandwritingLoss
@@ -14,10 +14,10 @@ from handwriting_generator.utils import (
     plot_window_weights,
 )
 
-__all__ = ["HandwritingGenerator"]
+__all__ = ["HandwritingGeneratorModule"]
 
 
-class HandwritingGenerator(pl.LightningModule, HyperparametersMixin):
+class HandwritingGeneratorModel(Module):
     def __init__(
         self,
         alphabet_size: int,
@@ -25,18 +25,14 @@ class HandwritingGenerator(pl.LightningModule, HyperparametersMixin):
         n_window_components: int = 10,
         n_mixture_components: int = 20,
         *,
-        learning_rate: float = 1e-3,
         probability_bias: float = 1.0,
     ):
-        super(HandwritingGenerator, self).__init__()
+        super().__init__()
         self.alphabet_size = alphabet_size
         self.hidden_size = hidden_size
         self.n_window_components = n_window_components
         self.n_mixture_components = n_mixture_components
-        self.learning_rate = learning_rate
         self.probability_bias = probability_bias
-
-        self.save_hyperparameters()
 
         # Batch normalization layer
         # This is used to standardize the x and y values
@@ -75,9 +71,6 @@ class HandwritingGenerator(pl.LightningModule, HyperparametersMixin):
             Linear(in_features=hidden_size, out_features=1),
             Sigmoid(),
         )
-
-        # Loss function
-        self.loss = HandwritingLoss()
 
     def forward(
         self,
@@ -191,11 +184,52 @@ class HandwritingGenerator(pl.LightningModule, HyperparametersMixin):
             transcriptions,
         )
 
+
+class HandwritingGeneratorModule(pl.LightningModule, HyperparametersMixin):
+    def __init__(
+        self,
+        alphabet_size: int,
+        hidden_size: int = 400,
+        n_window_components: int = 10,
+        n_mixture_components: int = 20,
+        *,
+        learning_rate: float = 1e-3,
+        probability_bias: float = 1.0,
+    ):
+        super(HandwritingGeneratorModule, self).__init__()
+        self.model = HandwritingGeneratorModel(
+            alphabet_size=alphabet_size,
+            hidden_size=hidden_size,
+            n_window_components=n_window_components,
+            n_mixture_components=n_mixture_components,
+        )
+        self.learning_rate = learning_rate
+        self.probability_bias = probability_bias
+
+        self.save_hyperparameters()
+
+        # Loss function
+        self.loss = HandwritingLoss()
+
+    def forward(
+        self,
+        strokes,
+        onehot,
+        strokes_lengths: torch.Tensor,
+        onehot_lengths: torch.Tensor | None = None,
+        *,
+        bias: torch.Tensor | None = None,
+        hidden: tuple[torch.Tensor, ...] | None = None,
+    ):
+        return self.model(
+            strokes, onehot, strokes_lengths, onehot_lengths, bias, hidden
+        )
+
     def _step(self, batch, batch_idx):
         # Split data tuple
         strokes, onehot, strokes_lengths, onehot_lengths, _ = batch
         # Main Model Forward Step
-        (eos, pi, mu1, mu2, sigma1, sigma2, rho), (window, phi), _ = self(
+        (eos, pi, mu1, mu2, sigma1, sigma2, rho), (window, phi), _ = self.model(
             strokes, onehot, strokes_lengths, onehot_lengths
         )
         # Compute loss
@@ -228,7 +262,7 @@ class HandwritingGenerator(pl.LightningModule, HyperparametersMixin):
             phi,
             strokes,
             transcriptions,
-        ) = self._generate_strokes_and_window_weights(batch)
+        ) = self.model._generate_strokes_and_window_weights(batch)
         # Plot Strokes
         fig, axes = plt.subplots(2, 1)
         strokes_array = strokes[idx]
@@ -249,7 +283,7 @@ class HandwritingGenerator(pl.LightningModule, HyperparametersMixin):
             phi,
             strokes,
             transcriptions,
-        ) = self._generate_strokes_and_window_weights(batch)
+        ) = self.model._generate_strokes_and_window_weights(batch)
         # Plot Strokes
         idx = 0
         fig, axes = plt.subplots(2, 1)

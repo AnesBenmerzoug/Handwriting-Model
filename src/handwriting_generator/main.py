@@ -18,7 +18,7 @@ from rich.logging import RichHandler
 
 from handwriting_generator.constants import OUTPUT_DIR
 from handwriting_generator.dataset import IAMDataModule
-from handwriting_generator.model import HandwritingGenerator
+from handwriting_generator.model import HandwritingGeneratorModule
 from handwriting_generator.utils import find_best_model_checkpoint
 
 logging.basicConfig(
@@ -52,12 +52,12 @@ def main(
     datamodule.prepare_data()
 
     if train:
-        model = HandwritingGenerator(alphabet_size=len(datamodule.alphabet))
+        model = HandwritingGeneratorModule(alphabet_size=len(datamodule.alphabet))
     else:
         logs_dir = OUTPUT_DIR / "lightning_logs"
         checkpoint_path = find_best_model_checkpoint(logs_dir)
         logger.info(f"Loading checkpoint from: '{checkpoint_path}'")
-        model = HandwritingGenerator.load_from_checkpoint(
+        model = HandwritingGeneratorModule.load_from_checkpoint(
             alphabet_size=len(datamodule.alphabet),
             checkpoint_path=checkpoint_path,
             map_location=lambda storage, loc: storage,
