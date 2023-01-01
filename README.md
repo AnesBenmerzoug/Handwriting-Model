@@ -1,17 +1,22 @@
 # Handwriting Model
-Implementation of a model for handwriting synthesis using
+
+> **NOTE**: This is currently a work-in-progress.
+
+Implementation of a model for Handwriting Synthesis using
 a Long Short-Term Memory recurrent neural networks in PyTorch.
 
-Based on the work of Alex Graves described in this article: https://arxiv.org/abs/1308.0850
+Based on the Handwriting Synthesis section of [Generating Sequences With Recurrent Neural Networks
+](https://arxiv.org/abs/1308.0850) by Alex Graves.
 
-# Dataset
+## Dataset
+
 The dataset used to train this neural network is the [IAM On-Line Handwriting Database](http://www.fki.inf.unibe.ch/databases/iam-on-line-handwriting-database).
 In order to train this network you have to register then download the following files:
 
 * [lineStrokes-all.tar.gz](http://www.fki.inf.unibe.ch/DBs/iamOnDB/data/lineStrokes-all.tar.gz)
 * [ascii-all.tar.gz](http://www.fki.inf.unibe.ch/DBs/iamOnDB/data/ascii-all.tar.gz)
 
-Put both of inside the [data](data) directory.
+Put both of them inside the [data](data) directory.
 
 ## Usage
 
