@@ -1,6 +1,7 @@
 import logging
 import pickle
 import string
+import tarfile
 
 import numpy as np
 import pytorch_lightning as pl
@@ -9,8 +10,11 @@ from rich.progress import track
 from torch.utils.data import DataLoader, Dataset, random_split
 
 from handwriting_generator.constants import (
+    DATA_DIR,
+    LINE_STROKES_DATA_FILE,
     LINE_STROKES_DIR,
     PREPROCESSED_DATA_FILE,
+    TRANSCRIPTIONS_DATA_FILE,
     TRANSCRIPTIONS_DIR,
 )
 from handwriting_generator.utils import (
@@ -82,7 +86,7 @@ class IAMDataModule(pl.LightningDataModule):
             + string.ascii_uppercase
         )
 
-        if not (TRANSCRIPTIONS_DIR.exists() and LINE_STROKES_DIR.exists()):
+        if not (TRANSCRIPTIONS_DATA_FILE.exists() and LINE_STROKES_DATA_FILE.exists()):
             raise FileNotFoundError(
                 f"Could not find data files. "
                 "Please make sure to follow the instructions in the README "
@@ -95,6 +99,30 @@ class IAMDataModule(pl.LightningDataModule):
                 f"Preprocessed data file {PREPROCESSED_DATA_FILE} exists already"
             )
             return
+
+        if not (TRANSCRIPTIONS_DATA_FILE.exists() and LINE_STROKES_DATA_FILE.exists()):
+            raise FileNotFoundError(
+                f"Could not find data files. "
+                "Please make sure to follow the instructions in the README "
+                "to download and set up the dataset."
+            )
+
+        if TRANSCRIPTIONS_DIR.exists():
+            logger.info(f"{TRANSCRIPTIONS_DIR} directory already exists. Skipping")
+        else:
+            logger.info(
+                f"Extracting {TRANSCRIPTIONS_DATA_FILE} into {TRANSCRIPTIONS_DIR}."
+            )
+            with tarfile.open(TRANSCRIPTIONS_DATA_FILE, "r") as tar:
+                tar.extractall(path=DATA_DIR)
+
+        if LINE_STROKES_DIR.exists():
+            logger.info(f"{LINE_STROKES_DIR} directory already exists. Skipping")
+        else:
+            logger.info(f"Extracting {LINE_STROKES_DATA_FILE} into {LINE_STROKES_DIR}.")
+            with tarfile.open(LINE_STROKES_DATA_FILE, "r") as tar:
+                tar.extractall(path=DATA_DIR)
+
         transcriptions = load_transcriptions(TRANSCRIPTIONS_DIR)
         line_strokes = load_line_strokes(LINE_STROKES_DIR)
         line_strokes, transcriptions = filter_line_strokes_and_transcriptions(

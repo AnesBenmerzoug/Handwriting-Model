@@ -23,10 +23,10 @@ source venv/bin/activate
 pip install -e .
 ```
 
-Then execute the following to extract the downloaded data files:
+Then execute the following to train the model:
 
 ```shell
-python scripts/extract_data_files.py
+python -m handwriting_generator
 ```
 
 See the main script's help text for more information:
