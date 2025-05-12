@@ -1,6 +1,10 @@
 # Handwriting Model
 
-> **NOTE**: This is currently a work-in-progress.
+> **NOTE**: 
+>
+> This is repository is archived. I will no longer update or change the code.
+>
+> The code works but doesn't produce good results. Use at your own risk.
 
 Implementation of a model for Handwriting Synthesis using
 a Long Short-Term Memory recurrent neural networks in PyTorch.
